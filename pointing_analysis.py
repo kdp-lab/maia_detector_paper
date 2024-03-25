@@ -6,14 +6,16 @@ import os
 import re
 
 # To run in powershell: 
+
 # Start-Process -NoNewWindow -FilePath "C:\Users\leoro\anaconda3\python.exe" -ArgumentList "`"C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\pointing_analysis.py`"" -RedirectStandardOutput "C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\pointing_log.log" -RedirectStandardError "C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\pointing_log_error.log"
+
 # Start-Process -NoNewWindow 
 # -FilePath "C:\Users\leoro\anaconda3\python.exe" 
 # -ArgumentList "`"C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\pointing_analysis.py`"" 
 # -RedirectStandardOutput "C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\pointing_log.log" 
 # -RedirectStandardError "C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\pointing_log_error.log"
 
-def process_dataset(data_file_path, num_hits=None, z_tolerance=1):
+def process_dataset(data_file_path, **kwargs):
     """
     Process a single dataset.
     """
@@ -21,17 +23,27 @@ def process_dataset(data_file_path, num_hits=None, z_tolerance=1):
     which_data = pu.load_data(data_file_path)
     print(f"Processed data {data_file_path}")
 
-    # Convert loaded data to r, xy, vb, and extract vertex layers
-    r_xy_vb, r_xyz_vb, vertex_layer = pu.xyz_to_r_xy_vb(which_data)
-    print(f"Extracted r_xyz_vb from {data_file_path}")
-
-    # Find hit pairs with a specific z tolerance
-    doublet_pairs_xyz = pu.find_hit_pairs(vertex_layer, r_xyz_vb, num_hits=num_hits, z_tolerance=z_tolerance) # z_tolerance in mm
-    print(f"Found pairs in {data_file_path}")
-
-    # Filter hit pairs based on angular differences within specified tolerances
-    d_theta_d_phi = pu.filter_hits_by_angle(doublet_pairs_xyz)
-    print(f"Found {len(doublet_pairs_xyz)} filtered pairs in {data_file_path}")
+    # Unpack kwargs for create_r_xy specifically or adjust parameters accordingly
+    r_xy_vb, r_xyz_vb, vertex_layer = pu.create_r_xy(
+        which_data, 
+        pt_cut=kwargs.get('pt_cut', 100),  # Provide default values if not specified
+        d0_cut=kwargs.get('d0_cut', 1)
+    )
+    # Unpack kwargs for find_doublets
+    doublet_pairs_xyz, doublet_pairs_rz = pu.find_doublets(
+        r_xy_vb, 
+        r_xyz_vb, 
+        vertex_layer, 
+        num_hits=kwargs.get('num_hits', 10000),  # Provide default values if not specified
+        z_tolerance=kwargs.get('z_tolerance', 1)
+    )
+    # Now call the revised d_theta_d_phi function with correct parameters
+    d_theta_d_phi = pu.pointing_angles( 
+        doublet_pairs_xyz, 
+        max_theta_tolerance=kwargs.get('max_theta_tolerance', 3e-3), 
+        max_phi_tolerance=kwargs.get('max_phi_tolerance', 35e-3)
+    )
+    print(f"The hit survival rate: {len(d_theta_d_phi)/len(r_xy_vb)}")
 
     pattern = r'(_sim|_digi|_digi_bib|_reco|_reco_bib)\.json$'
     base_filename = os.path.basename(data_file_path)
@@ -48,24 +60,38 @@ def process_dataset(data_file_path, num_hits=None, z_tolerance=1):
     print(f"Saved {save_filename}")
     # pu.save2DHistogram(d_theta_d_phi[:,0]*1000, d_theta_d_phi[:,1]*1000, fname = data_file_path, bins=np.linspace(0,1,200))
 
+kwargs = {
+            'num_hits': None,
+            'z_tolerance': 1,
+            'max_theta_tolerance': 3e-3,
+            'max_phi_tolerance': 35e-3,
+            'pt_cut': 100,
+            'd0_cut': 1
+        }
+
+def wrapper(data_file):
+    # Call process_dataset with **kwargs
+    process_dataset(data_file, **kwargs)
+
 def main():
     # List of paths to your JSON data files
     data_files = [
-        Path(r"X:\local\d1\lrozanov\mucoll-tutorial-2023\reco_Hbb\134_10_reco.json"),
-        Path(r"X:\local\d1\lrozanov\mucoll-tutorial-2023\reco_Hbb\134_0.1_reco.json"),
-        Path(r"X:\local\d1\lrozanov\mucoll-tutorial-2023\reco_Hbb\134_1_reco.json")
-        ,Path(r"X:\local\d1\lrozanov\mucoll-tutorial-2023\reco_Hbb\300_10_reco.json")
-        # Add more datasets as needed
+        Path(r"C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\LLPs_data\134_10_reco.json"),
+        Path(r"C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\LLPs_data\134_0.1_reco.json"),
+        Path(r"C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\LLPs_data\134_1_reco.json"),
+        Path(r"C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\LLPs_data\300_10_reco.json")
+        # Path(r"C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\LLPs_data\134_0.1_reco_bib.json"),
+        # Path(r"C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\LLPs_data\134_1_reco_bib.json"),
+        # Path(r"C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\LLPs_data\300_10_reco_bib.json"),
+        # Path(r"C:\Users\leoro\OneDrive\Muon_Collider\Psets\mucol_plotting_scripts-main\macros\local_scripts\LLPs_data\134_0.1_reco_bib.json"),
         ]
 
     # Determine the number of processes to use
     num_processes = min(len(data_files), 4)
-    num_hits = None
-    z_tolerance = 1
 
     # Create a pool of workers to process the datasets in parallel
     with mp.Pool(processes=num_processes) as pool:
-        pool.starmap(process_dataset, [(data_file, num_hits, z_tolerance) for data_file in data_files]) 
+        pool.starmap(wrapper, [(data_file,) for data_file in data_files])
 
 if __name__ == "__main__":
     main()

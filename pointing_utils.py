@@ -2,7 +2,6 @@
 import awkward as ak
 import numpy as np
 import matplotlib.pyplot as plt
-import json
 from pathlib import Path
 import os
 import re
@@ -14,119 +13,124 @@ def load_data(file_path):
     which_data = ak.from_json(Path(file_path))
     return which_data
 
-def xyz_to_r_xy_vb(which_data):
-    r_xy = np.array([np.array((np.sqrt(a**2 + b**2),c)) for a,b,c in zip(ak.flatten(which_data['x']),ak.flatten(which_data['y']),ak.flatten(which_data['z']))])
-    r_xy_vb = r_xy[(ak.flatten(which_data['hit_detector']) == 1)] # | (ak.flatten(which_data['hit_detector']) == 2)]
-    r_xyz = np.array([np.array((a,b,c)) for a,b,c in zip(ak.flatten(which_data['x']),ak.flatten(which_data['y']),ak.flatten(which_data['z']))])
-    r_xyz_vb = r_xyz[(ak.flatten(which_data['hit_detector']) == 1)] # | (ak.flatten(which_data['hit_detector']) == 2)]
+# Function to remove duplicate hits
+def make_unique(r_xy_vb, r_xyz_vb, hits_layer):
     # Find unique rows in r_xyz_vb
     unique_rows, unique_indices = np.unique(r_xyz_vb, axis=0, return_index=True)
+
     # Check if the number of unique rows is less than the total number of rows
-    
-    r_xyz_vb = r_xyz_vb[unique_indices]
-    r_xy_vb = r_xy_vb[unique_indices]
-    vertex_layer = ak.flatten(which_data['hit_layer'][(which_data['hit_detector'] == 1)])[unique_indices]
     if len(unique_rows) < len(r_xyz_vb):
-        duplicate_indices = np.setdiff1d(np.arange(len(r_xyz_vb)), unique_indices)
         print("Duplicates found in dataset:")
+        
+        # Find duplicate indices
+        duplicate_indices = np.setdiff1d(np.arange(len(r_xyz_vb)), unique_indices)
         print(len(duplicate_indices))
+        # Print duplicate rows
+        # for idx in duplicate_indices:
+        #     print(idx, r_xyz_vb[idx])
     else:
         print("No duplicates found in dataset.")
+    r_xyz_vb = r_xyz_vb[unique_indices]
+    r_xy_vb = r_xy_vb[unique_indices]
+    vertex_layer = (hits_layer[unique_indices])
     return r_xy_vb, r_xyz_vb, vertex_layer
 
-def find_hit_pairs(vertex_layer, r_xyz_vb, r_xy_vb=None, num_hits = None, z_tolerance=1):
-    """
-    Finds pairs of hits within a specified z tolerance between consecutive layers.
+# Function to create r_xy and r_xyz arrays for the vertex barrel region
+def create_r_xy(which_data, pt_cut = 100, d0_cut = 1):
+    '''
+    Returns [r_xy, z] and [x,y,z] for the vertex barrel region for a given dataset and cuts
+    '''
+    mask = (which_data['track_pt'] > pt_cut) & (which_data['d0_res'] < d0_cut) & (which_data['hit_detector'] == 1)
+    hits_x = np.ravel(which_data['x'][mask])
+    hits_y = np.ravel(which_data['y'][mask])
+    hits_z = np.ravel(which_data['z'][mask])
+    hits_layer = np.ravel(which_data['hit_layer'][mask])
+    # print(hits_x)
+    r_xy_vb = np.array([[np.sqrt(a**2 + b**2), c] for a, b, c in zip(hits_x, hits_y, hits_z)])
+    r_xyz_vb = np.array([[a, b, c] for a, b, c in zip(hits_x, hits_y, hits_z)])
+    return make_unique(r_xy_vb, r_xyz_vb, hits_layer)
 
-    Parameters:
-    - which_data: Dataset containing hits information.
-    - r_xyz_vb: Numpy array of xyz coordinates of hits.
-    - r_xy_vb: Numpy array of xy coordinates of hits.
-    - num_hits: Number of hits to consider for pairing.
-    - z_tolerance: Z-axis tolerance for considering hits as a pair (default 1mm).
+# Function to find doublet pairs
+def find_doublets(r_xy_vb, r_xyz_vb, vertex_layer, num_hits = None, z_tolerance = 1):
+    if num_hits is None:
+        num_hits = len(r_xy_vb) # 10000 takes < 1 min, 20000 takes ~4 mins
 
-    Returns:
-    - doublet_pairs_xyz: Array of hit pairs in xyz coordinates.
-    - doublet_pairs_rz: Array of hit pairs in r(z) coordinates.
-    """
+    vertex_layer = vertex_layer[:num_hits]
+    r_xyz_vb_reduced = r_xyz_vb[:num_hits]
+    r_xy_vb_reduced = r_xy_vb[:num_hits]
 
     doublet_pairs_xyz = []
-    #doublet_pairs_rz = []
-
-    if num_hits is None: num_hits = len(r_xyz_vb)
-
-    r_xyz_vb_reduced = r_xyz_vb[:num_hits]
-    #r_xy_vb_reduced = r_xy_vb[:num_hits]
-    vertex_layer = vertex_layer[:num_hits]
+    doublet_pairs_rz = []
 
     for layer in range(0, max(vertex_layer), 2):  
+        # Identify hits in the current and next layer
         hits_current_layer = r_xyz_vb_reduced[vertex_layer == layer]
         hits_next_layer = r_xyz_vb_reduced[vertex_layer == layer + 1]
         
+        # For each hit in the current layer, find a hit in the next layer within z_tolerance
         for i, hit1 in enumerate(hits_current_layer):
+            #print(i, hit1)
+            # Calculate the z-distance between hit1 and all hits in the next layer
             z_distances = np.abs(hit1[2] - hits_next_layer[:, 2])
+            
+            # Find indices of hits in the next layer within the z_tolerance
             within_tolerance = np.where(z_distances < z_tolerance)[0]
             
+            # Pair hit1 with all hits within tolerance
             for j in within_tolerance:
                 hit2 = hits_next_layer[j]
                 doublet_pairs_xyz.append([hit1, hit2])
-                #doublet_pairs_rz.append([r_xy_vb_reduced[vertex_layer == layer][i], r_xy_vb_reduced[vertex_layer == layer + 1][j]])
+                # Assuming r_xy_vb_reduced is structured similarly to r_xyz_vb_reduced, index with the same logic
+                doublet_pairs_rz.append([r_xy_vb_reduced[vertex_layer == layer][i], r_xy_vb_reduced[vertex_layer == layer + 1][j]])
 
+    # Convert lists to arrays for further processing if necessary
     doublet_pairs_xyz = np.array(doublet_pairs_xyz)
-    #doublet_pairs_rz = np.array(doublet_pairs_rz)
+    doublet_pairs_rz = np.array(doublet_pairs_rz)
     print(f"Total pairs found from {num_hits} hits: {len(doublet_pairs_xyz)}")
-    return doublet_pairs_xyz#, doublet_pairs_rz
 
+    return doublet_pairs_xyz, doublet_pairs_rz
+
+# Function to compute the cylindrical coordinates (phi) of a vector
 def xy_to_phi(x, y):
-    """
-    Convert Cartesian coordinates (x, y) to cylindrical coordinate (phi).
-    """
     return np.arctan2(y, x)
 
+# Function to compute the longitudinal angle (theta) between a vector and the z-axis
 def xyz_to_theta(x, y, z):
-    """
-    Compute the longitudinal angle (theta) between a vector and the z-axis.
-    """
     return np.arctan2(np.sqrt(x**2 + y**2), z)
 
+# Function to compute the angular difference between two angles (in radians) with cylindrical symmetry
 def angular_difference(angle1, angle2):
-    """
-    Compute the angular difference between two angles with cylindrical symmetry.
-    """
     diff = np.abs(angle1 - angle2)
+    # Adjust the difference to be within the range [-pi, pi)
+    # diff = (diff + np.pi) % (2 * np.pi) - np.pi
     return np.abs(diff)
 
-import numpy as np
-
-def filter_hits_by_angle(doublet_pairs_xyz, max_theta_tolerance=3e-3, max_phi_tolerance=3e-3):
-    """
-    Filters pairs of hits based on angular differences within specified tolerances.
-
-    Parameters:
-    - doublet_pairs_xyz: Array of hit pairs in xyz coordinates.
-    - max_theta_tolerance: Maximum tolerated longitudinal angle difference (in radians).
-    - max_phi_tolerance: Maximum tolerated cylindrical coordinate (phi) difference (in radians).
-
-    Returns:
-    - d_theta_d_phi: Array of angular differences (theta, phi) for hit pairs within tolerance.
-    """
+# Function to compute the pointing angles between pairs of hits
+def pointing_angles(doublet_pairs_xyz, max_theta_tolerance = 3e-3, max_phi_tolerance = 35e-3):
     d_theta_d_phi = []
-
+    # Iterate over each pair of hits in doublet_pairs_xyz
     for pair in doublet_pairs_xyz:
+        # Extract the Cartesian coordinates of the two hits
         hit1_xyz, hit2_xyz = pair
+        
+        # Compute the longitudinal angle (theta) and cylindrical coordinate (phi) for each hit
         theta1 = xyz_to_theta(*hit1_xyz)
         theta2 = xyz_to_theta(*hit2_xyz)
         phi1 = xy_to_phi(hit1_xyz[0], hit1_xyz[1])
         phi2 = xy_to_phi(hit2_xyz[0], hit2_xyz[1])
-
+        
+        # Compute the angular differences
         d_theta = angular_difference(theta1, theta2)
         d_phi = angular_difference(phi1, phi2)
-
+        
+        # Filter based on the maximum tolerated angles
         if d_theta <= max_theta_tolerance and d_phi <= max_phi_tolerance:
             d_theta_d_phi.append(np.array([d_theta, d_phi]))
 
     d_theta_d_phi = np.array(d_theta_d_phi)
+
     return d_theta_d_phi
+
 
 def save2DHistogram(datax, datay, fname, bins=100, weights=None, norm="log", xlim=None, ylim=None):
     data_flatx = np.array(np.ravel(datax)).T
