@@ -5,14 +5,14 @@
 
 import numpy as np
 import awkward as ak
-import sys,glob
+import sys,os,glob
 import matplotlib.pyplot as plt
 import mplhep as hep
 import argparse as ap
 # hep.style.use(hep.style.ROOT) # For now ROOT defaults to CMS
 
-from utils.data_utils import load_data_from_json
-from utils.plot_utils import choose_histogram,plot_efficiencies
+from utils.data_utils import DataLoader
+from utils.plot_utils import choose_histogram,Plotter
 from utils.calc_utils import calculate_efficiencies
 from utils.fit_utils import gaussian, double_gaussian, fit_gaussian, fit_double_gaussian, double_gaussian_mean_rms
 
@@ -38,16 +38,21 @@ def process_data(datax, datay, numbins, bins=None,theta=False):
 
     # Loop over the data
     for j in range(len(datay)):
-        # Take flattened and transposed data
-        data_flatx = np.array(np.ravel(datax[j])).T
-        data_flaty = np.array(np.ravel(datay[j])).T
-        x_bins = np.linspace(data_flatx.min(), data_flatx.max(), numbins + 1)
+
+
+        data_flatx = ak.to_numpy(np.transpose(np.ravel(datax[j])))
+        data_flaty = ak.to_numpy(np.transpose(np.ravel(datay[j])))
+
+        # TODO: Deal properly with edge case of len(data_flatx) == 0
+        if(len(data_flatx) == 0): continue
+
+        x_bins = np.linspace(np.min(data_flatx), np.max(data_flatx), numbins + 1)
         if theta: x_bins = np.linspace(15,165, numbins + 1)
         rms_values = []
         sem_values = []
         bin_centers = []
 
-        # Loop over the theta bins
+        # Loop over the theta bins # TODO: Theta? I don't think these comments are quite right. -Jan
         for i in range(numbins):
             # Slice the data based on the theta bins
             slice_data = data_flaty[(data_flatx >= x_bins[i]) & (data_flatx < x_bins[i + 1])]
@@ -74,7 +79,7 @@ def process_data(datax, datay, numbins, bins=None,theta=False):
             'bin_centers': np.array(bin_centers),
             'rms_values': np.array(rms_values),
             'sem_values': np.array(sem_values),
-            'x_err': (data_flatx.max() - data_flatx.min()) / (2 * numbins)
+            'x_err': (np.max(data_flatx) - np.min(data_flatx)) / (2 * numbins)
         })
 
     return processed_results
@@ -110,72 +115,15 @@ def fold_data(data, LC_theta_match, LC_pt_match, bib = True):
         folded_data = np.concatenate((data, mirrored_data))
     return (folded_data)
 
-def plot_processed_data(processed_results, labels=None, xlabel='', ylabel='', title='', fontsize=20, log=False, xlog=False, ylim=None, xlim=None, savepdf=False, bib=False, outdir=None, savename=''):
-    """
-    Plot the processed RMS data.
-
-    Parameters:
-        processed_results (list): List of dictionaries containing processed data.
-        labels (list of str, optional): Labels for the data series.
-        xlabel (str, optional): X-axis label.
-        ylabel (str, optional): Y-axis label.
-        title (str, optional): Plot title.
-        fontsize (int, optional): Font size for the plot labels.
-        log (bool, optional): Use a logarithmic y-axis scale.
-        ylim (tuple, optional): Y-axis limits.
-        xlim (tuple, optional): X-axis limits.
-        savepdf (bool, optional): Save the plot as a PDF file.
-        savename (str, optional): Name of the saved PDF file.
-    """
-    fig, ax = plt.subplots(figsize=(8,6))
-
-    # Loop over the processed results (dictionary of bin centers, rms values, sem values, and theta width) and create errorbar graphs
-    for i, result in enumerate(processed_results):
-        label = labels[i] if labels else ''
-        ax.errorbar(
-            result['bin_centers'],
-            result['rms_values'],
-            xerr=result['x_err'],
-            yerr=result['sem_values'],
-            fmt='o',
-            markersize=6,
-            label=label
-        )
-
-    # Custom Muon Collider text
-    if len(title) > 0:
-        ax.set_title(title, fontsize=fontsize)
-    else:
-        ax.set_title(r'$\it{MAIA}$ Detector Concept', fontsize=fontsize, loc = 'right')
-
-    plt.text(0.04, 0.92, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
-    label = "Simulation"
-    if bib: label += ', with BIB'
-    else  : label += ', no BIB'
-    plt.text(0.04, 0.85, label, transform=plt.gca().transAxes)
-
-    plt.text(0.04, 0.78, r'Lattice v04', transform=plt.gca().transAxes)
-    plt.text(0.04, 0.71, r'$\sqrt{s}$ = 10 TeV', transform=plt.gca().transAxes)
-
-    # handle axes
-    ax.set_xlabel(xlabel, loc='right', fontsize=fontsize+5)
-    ax.set_ylabel(ylabel, loc='top'  , fontsize=fontsize+5)
-    if log : ax.set_yscale('log')
-    if xlog: ax.set_xscale('log')
-    if ylim is not None: ax.set_ylim(ylim)
-    if xlim is not None: ax.set_xlim(xlim)
-    if labels:
-        ax.legend(fontsize=fontsize-2,loc='upper right')
-    ax.tick_params(labelsize=fontsize)
-    #ax.yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
-    #ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
-
-    if len(savename)>0:
-        plt.savefig(savename+".pdf", format='pdf', bbox_inches='tight')
-
-    plt.show()
 
 def main(args):
+
+    parser = ap.ArgumentParser()
+    parser.add_argument('-i','--inputFile',type=str,required=True)
+    parser.add_argument('-o','--outputDirectory',type=str,default='output')
+    args = vars(parser.parse_args())
+    infile = args['inputFile']
+    outdir = args['outputDirectory']
 
     hep.style.use(hep.style.ATLAS)
 
@@ -183,9 +131,14 @@ def main(args):
 
     # TODO: This needs a major rework! Shouldn't be loading all these different hard-coded files, make this an argument!!! -Jan
 
-    # No BIB data
-    data_filepath = glob.glob('**/*v2_noBIB_merged.json', recursive=True)[0] # find the v2_noBIB_merged.json file
-    v2_noBIB_merged = load_data_from_json(data_filepath)
+    data_loader = DataLoader()
+    data_loader.SetFilename(infile)
+    data_loader.Load()
+    which_data = data_loader
+
+    # # No BIB data
+    # data_filepath = glob.glob('**/*v2_noBIB_merged.json', recursive=True)[0] # find the v2_noBIB_merged.json file
+    # v2_noBIB_merged = load_data_from_json(data_filepath)
 
     # pt_all_path = glob.glob('**/*v0_noBIB_all.json', recursive=True)[0] # find the v0_noBIB_all.json file
     # pt_all = load_data_from_json(pt_all_path)
@@ -209,6 +162,12 @@ def main(args):
     # bib_5TeV_path = glob.glob('**/*v0_BIB_5TeV.json', recursive=True)[0] # find the v0_BIB_5TeV.json file
     # bib_5TeV = load_data_from_json(bib_5TeV_path)
 
+    plotter = Plotter()
+    plotter.SetCOMTev(10)
+    plotter.SetDataLabel(r'Simulation, BIB')
+    plotter.SetLatticeLabel(r'Lattice v04')
+    plotter.SetOutputDirectory(outdir)
+
 
     # choose_histogram(bib_all, 'nhits')
     # choose_histogram(bib_all, 'chi2_ndf')
@@ -230,27 +189,65 @@ def main(args):
     # In[40]:
 
 
-    which_data = v2_noBIB_merged
+    # which_data = v2_noBIB_merged
     #which_data=pt_all_5TeV
 
-    # Assign variables to no-BIB data
-    LC_pt_match = which_data['LC_pt_match']
-    mcp_mu_pt = which_data['mcp_mu_pt']
-    LC_nhits = which_data['LC_nhits']
-    LC_track_theta = np.degrees(which_data['LC_track_theta'])
-    mcp_mu_theta = np.degrees(2 * np.arctan(np.exp(-which_data['mcp_mu_eta'])))
+    # Do some mapping of keys -- since the old JSON files labeled things differently than we now do with ROOT ntuples.
+    # Maybe this will ultimately need to be simplified? Our new SLCIO-Analyzer will use the ROOT-style keys for JSON too.
+    key_mapping = {
+        'JSON':
+            {
+            'LC_pt_match':'LC_pt_match',
+            'LC_eta_match':'LC_eta_match',
+            'LC_nhits':'LC_nhits',
+            'LC_d0':'LC_d0',
+            'LC_z0':'LC_z0',
+            'LC_pt_res':'LC_pt_res',
+            'LC_track_pt':'LC_track_pt',
+            'LC_track_theta':'LC_track_theta',
+            'mcp_mu_pt':'mcp_mu_pt',
+            'mcp_mu_eta':'mcp_mu_eta',
+            },
+        'ROOT': # mapping the old keys to much more understandable ones!
+            {
+            'LC_pt_match':'lc_matched_mcp_pt',
+            'LC_eta_match':'lc_matched_mcp_eta',
+            'LC_nhits':'lc_matched_track_nhits',
+            'LC_d0':'lc_matched_track_d0',
+            'LC_z0':'lc_matched_track_z0',
+            'LC_pt_res':'lc_matched_track_ptres',
+            'LC_track_pt':'lc_matched_track_pt',
+            'LC_track_theta':'lc_matched_track_theta',
+            'mcp_mu_pt':'mcp_mu_pt',
+            'mcp_mu_eta':'mcp_mu_eta',
+            }
+
+    }
+
+    # Assign variables
+    LC_pt_match = which_data[key_mapping[which_data.GetMode()]['LC_pt_match']]
+    LC_eta_match = which_data[key_mapping[which_data.GetMode()]['LC_eta_match']]
+    LC_theta_match = np.degrees(2 * np.arctan(np.exp(-LC_eta_match)))
+    LC_track_pt = which_data[key_mapping[which_data.GetMode()]['LC_track_pt']]
+    LC_track_theta = np.degrees(which_data[key_mapping[which_data.GetMode()]['LC_track_theta']])
+    mcp_mu_pt = which_data[key_mapping[which_data.GetMode()]['mcp_mu_pt']]
+    mcp_mu_eta = which_data[key_mapping[which_data.GetMode()]['mcp_mu_eta']]
+    mcp_mu_theta = np.degrees(2 * np.arctan(np.exp(-mcp_mu_eta)))
+    LC_nhits = which_data[key_mapping[which_data.GetMode()]['LC_nhits']]
+    LC_d0 = which_data[key_mapping[which_data.GetMode()]['LC_d0']]
+    LC_pt_res = which_data[key_mapping[which_data.GetMode()]['LC_pt_res']]
 
     # Clean track using pT >=1 GeV, d0 <= 0.1 mm, and nhits > 4
-    track_clean = (ak.flatten(which_data['LC_track_pt'])>=1) & (ak.flatten(which_data['LC_d0'])<= 0.1) & (ak.flatten(which_data['LC_nhits'])>4)
+    track_clean = (ak.flatten(LC_track_pt)>=1) & (ak.flatten(LC_d0)<= 0.1) & (ak.flatten(LC_nhits)>4)
 
     # Define the eta transition region from barrel to endcap
     transition_region = 1
 
     # Separate the data into barrel and endcap
-    track_barrel = (np.abs(ak.flatten(which_data['LC_eta_match']))<transition_region)
-    truth_barrel = (np.abs(ak.flatten(which_data['mcp_mu_eta']))<transition_region)
-    track_endcap = (np.abs(ak.flatten(which_data['LC_eta_match']))>=transition_region)
-    truth_endcap = (np.abs(ak.flatten(which_data['mcp_mu_eta']))>=transition_region)
+    track_barrel = (np.abs(ak.flatten(LC_eta_match))<transition_region)
+    truth_barrel = (np.abs(ak.flatten(mcp_mu_eta))<transition_region)
+    track_endcap = (np.abs(ak.flatten(LC_eta_match))>=transition_region)
+    truth_endcap = (np.abs(ak.flatten(mcp_mu_eta))>=transition_region)
 
     # Sanity check with some overall efficiencies
     # print(len((LC_pt_match[track_barrel])), len((LC_pt_match[track_endcap])), len(LC_pt_match), len(mcp_mu_pt[truth_barrel]), len((mcp_mu_pt[truth_endcap])), len(mcp_mu_pt))
@@ -260,133 +257,30 @@ def main(args):
     print("Endcap Efficiency:", len((LC_pt_match[track_endcap]))/len((mcp_mu_pt[truth_endcap])))
     print("Lost Efficiency after cleaning:", len((LC_pt_match))/len((mcp_mu_pt)) - len((LC_pt_match)[track_clean])/len((mcp_mu_pt)))
 
-    # Binned in Theta, comparing before and after cleaning
-
+    # Binned in theta
     results, min_value, max_value = calculate_efficiencies([LC_track_theta,LC_track_theta[track_clean]], [mcp_mu_theta,mcp_mu_theta])
-    plot_efficiencies(results, min_value, max_value,
+    plotter.plot_efficiencies(results, min_value, max_value,
                     xlabel=r"$\theta [\degree]$ ",
                     labels=["Before Cleaning", "After Cleaning"],
                     savename='nobib_eff_vs_theta'
                     )
 
-    # Binned in pT
-
+    # Binned in pT, split into barrel and endcap regions
     custom_bins = [1,2,5,10,20,50,100,200,500,1000,2000,5000]
     results, min_value, max_value = calculate_efficiencies([LC_pt_match[track_barrel],LC_pt_match[track_clean & track_barrel]], [mcp_mu_pt [truth_barrel],mcp_mu_pt[truth_barrel]], custom_bins=custom_bins)
-    plot_efficiencies(results, min_value, max_value,
+    plotter.plot_efficiencies(results, min_value, max_value,
                     xlabel="$p_T$ [GeV]",
                     labels=["Before Cleaning", "After Cleaning"],
                     misctext=r'$40^{\circ}<\theta<140^{\circ}$',
                     savename='nobib_eff_vs_pt_barrel'
                     )
     results, min_value, max_value = calculate_efficiencies([LC_pt_match[track_endcap],LC_pt_match[track_clean & track_endcap]], [mcp_mu_pt [truth_endcap],mcp_mu_pt[truth_endcap]], custom_bins=custom_bins)
-    plot_efficiencies(results, min_value, max_value,
+    plotter.plot_efficiencies(results, min_value, max_value,
                     xlabel="$p_T$ [GeV]",
                     labels=["Before Cleaning", "After Cleaning"],
                     misctext=r'$\theta<40^{\circ}$ or $\theta>140^{\circ}$',
                     savename='nobib_eff_vs_pt_endcap'
                     )
-
-    # # # BIB
-
-    # # In[75]:
-
-
-    # # Assign variables to BIB data
-    # bib_track_pt = bib_all['LC_pt_match']
-    # bib_truth_pt = bib_all['mcp_mu_pt']
-    # bib_nhits = bib_all['LC_nhits']
-    # bib_track_eta = bib_all['LC_eta_match']
-    # bib_truth_eta = bib_all['mcp_mu_eta']
-
-    # # Clean track using pT >=1 GeV, d0 <= 0.1 mm, and nhits > 4
-    # bib_track_clean = (ak.flatten(bib_track_pt)>=1) & (ak.flatten(bib_all['LC_d0'])<= 0.1) & (ak.flatten(bib_nhits)>4)
-
-    # # Define the eta transition region from barrel to endcap
-    # transition_region = 1
-
-    # # Separate the data into barrel and endcap
-    # bib_track_barrel = (np.abs(ak.flatten(bib_track_eta))<transition_region)
-    # bib_truth_barrel = (np.abs(ak.flatten(bib_truth_eta))<transition_region)
-    # bib_track_endcap = (np.abs(ak.flatten(bib_track_eta))>=transition_region)
-    # bib_truth_endcap = (np.abs(ak.flatten(bib_truth_eta))>=transition_region)
-
-    # # Sanity check with some overall efficiencies
-    # # print(len((LC_pt_match[track_barrel])), len((LC_pt_match[track_endcap])), len(LC_pt_match), len(mcp_mu_pt[truth_barrel]), len((mcp_mu_pt[truth_endcap])), len(mcp_mu_pt))
-    # print("For BIB:")
-    # print("Total efficiency:", len((bib_track_pt))/len((bib_truth_pt)))
-    # print("Barrel efficiency:", len((bib_track_pt[bib_track_barrel]))/len((bib_truth_pt[bib_truth_barrel])))
-    # print("Endcap efficiency:", len((bib_track_pt[bib_track_endcap]))/len((bib_truth_pt[bib_truth_endcap])))
-    # print("Efficiency lost from cleaning:", len((bib_track_pt))/len((bib_truth_pt)) - len((bib_track_pt)[bib_track_clean])/len((bib_truth_pt)))
-
-
-    # # Binned in Theta
-
-    # # In[76]:
-
-
-    # results, min_value, max_value = calculate_efficiencies([bib_track_theta,bib_track_theta[bib_track_clean]], [bib_truth_theta,bib_truth_theta])
-    # plot_efficiencies(results, min_value, max_value,
-    #                 xlabel=r"$\theta [\degree]$ ",
-    #                 labels=["Before Cleaning", "After Cleaning"],
-    #                 savename='bib_eff_vs_theta',
-    #                 bib=True)
-
-
-    # # Binned in pT
-
-    # # In[79]:
-
-
-    # custom_bins = [1,2,5,10,20,50,100,200,500,1000]
-    # results, min_value, max_value = calculate_efficiencies([bib_track_pt[bib_track_barrel],bib_track_pt[bib_track_clean & bib_track_barrel]], [bib_truth_pt [bib_truth_barrel],bib_truth_pt[bib_truth_barrel]],custom_bins=custom_bins)
-    # plot_efficiencies(results, min_value, max_value,
-    #                 xlabel="$p_T$ [GeV]",
-    #                 labels=["Before Cleaning", "After Cleaning"],
-    #                 savename='bib_eff_vs_pt_barrel',
-    #                 misctext=r'$40^{\circ}<\theta<140^{\circ}$',
-    #                 bib=True)
-
-    # results, min_value, max_value = calculate_efficiencies([bib_track_pt[bib_track_endcap],bib_track_pt[bib_track_clean & bib_track_endcap]], [bib_truth_pt [bib_truth_endcap],bib_truth_pt[bib_truth_endcap]],custom_bins=custom_bins)
-    # plot_efficiencies(results, min_value, max_value,
-    #                 xlabel="$p_T$ [GeV]",
-    #                 labels=["Before Cleaning", "After Cleaning"],
-    #                 savename='bib_eff_vs_pt_endcap',
-    #                 misctext=r'$\theta<40^{\circ}$ or $\theta>140^{\circ}$',
-    #                 bib=True)
-
-
-    # # Resolutions Plotting
-
-    # ### Setup before plotting
-    #
-    # Assign the data to variables
-
-    # In[84]:
-
-
-    which_data = v2_noBIB_merged
-    #which_data = pt_all_5TeV
-
-    LC_nhits = which_data['LC_nhits']
-    LC_pixel_nhits = which_data['LC_pixel_nhits']
-    LC_d0 = which_data['LC_d0']
-    LC_z0 = which_data['LC_z0']
-    LC_track_pt = which_data['LC_track_pt']
-    LC_track_theta = np.degrees(which_data['LC_track_theta'])
-    LC_track_eta = which_data['LC_track_eta']
-    LC_pt_res = which_data['LC_pt_res']
-    LC_pt_match = which_data['LC_pt_match']
-    LC_eta_match = which_data['LC_eta_match']
-    LC_theta_match = np.degrees(2 * np.arctan(np.exp(-LC_eta_match)))
-    LC_phi_match = which_data['LC_phi_match']
-    LC_ndf = which_data['LC_ndf']
-    LC_chi2 = which_data['LC_chi2']
-    LC_dr = which_data['LC_dr']
-
-    # bib_0_50_theta = np.degrees(2*np.arctan(np.exp(-bib_0_50['LC_eta_match'])))
-    # bib_50_250_theta = np.degrees(2*np.arctan(np.exp(-bib_50_250['LC_eta_match'])))
-    # bib_250_1000_theta = np.degrees(2*np.arctan(np.exp(-bib_250_1000['LC_eta_match'])))
 
     ptmask1 = np.ravel(LC_pt_match)<=50
     ptmask2 = (np.ravel(LC_pt_match)>50) & (np.ravel(LC_pt_match)<=250)
@@ -402,6 +296,7 @@ def main(args):
 
 
     # Assign cuts
+    # TODO: What on earth is this? -Jan
     theta_all_masked = []
     d0_all_masked = []
     pt_res_all_masked = []
@@ -452,14 +347,10 @@ def main(args):
     array3 = np.linspace(-0.002,0.002,300) # pt_250_1000_bins
     array4 = np.linspace(-0.002,0.002,300)  # pt_1000_5000_bins
     pt_2_bins = [array1, array2, array3, array4]
-    d0_ylim = (0,0.01)
-    pt_ylim = (0,0.01)
-
+    # d0_ylim = (0,0.01)
+    # pt_ylim = (0,0.01)
 
     # Code for plotting resolutions for no bib
-
-    # In[94]:
-
 
     # d0 resolution versus theta
     processed_data = process_data(
@@ -469,7 +360,7 @@ def main(args):
         bins=d0_bins,
         theta=True
     )
-    plot_processed_data(
+    plotter.plot_processed_data(
         processed_results=processed_data,
         labels=[r'$p_T$ = 0-50 GeV', r'$p_T$ = 50-250 GeV', r'$p_T$ = 250-1000 GeV', r'$p_T$ = 1000-5000 GeV'],
         xlabel=r'$\theta [\degree]$',
@@ -488,7 +379,8 @@ def main(args):
         bins=pt_bins,
         theta=True
     )
-    plot_processed_data(
+
+    plotter.plot_processed_data(
         processed_results=processed_data,
         labels=[r'$p_T$ = 0-50 GeV', r'$p_T$ = 50-250 GeV', r'$p_T$ = 250-1000 GeV', r'$p_T$ = 1000-5000 GeV'],
         xlabel=r'$\theta[\degree]$',
@@ -497,8 +389,8 @@ def main(args):
         xlim=(0,180),
         log=True,
         savename="res_pt_v_theta_nobib"
-
     )
+
     # pt resolution versus pt
     processed_data = process_data(
         datax=pt_match_all_masked,
@@ -506,9 +398,10 @@ def main(args):
         numbins=3,
         bins=pt_bins
     )
-    plot_processed_data(
+
+    plotter.plot_processed_data(
         processed_results=processed_data,
-        labels=[r'$p_T$ = 0-50 GeV', r'$p_T$ = 50-250 GeV', r'$p_T$ = 250-1000 GeV', r'$p_T$ = 1000-5000 GeV'],
+        # labels=[r'$p_T$ = 0-50 GeV', r'$p_T$ = 50-250 GeV', r'$p_T$ = 250-1000 GeV', r'$p_T$ = 1000-5000 GeV'],
         xlabel=r'$p_T[GeV]$',
         ylabel= r'$\sigma(p_T)/p_T$',
         # title=r'Single $\mu^{\pm}$ no BIB @ 10TeV',
@@ -523,7 +416,7 @@ def main(args):
         bins=pt_2_bins,
         theta=True
     )
-    plot_processed_data(
+    plotter.plot_processed_data(
         processed_results=processed_data,
         labels=[r'$p_T$ = 0-50 GeV', r'$p_T$ = 50-250 GeV', r'$p_T$ = 250-1000 GeV', r'$p_T$ = 1000-5000 GeV'],
         xlabel=r'$\theta[\degree]$',
@@ -532,17 +425,17 @@ def main(args):
         log=True,
         xlim=(0,180),
         savename="res_pt2_v_theta_nobib"
-
     )
+
     processed_data = process_data(
         datax=pt_match_all_masked,
         datay=pt_res2_all_masked,
         numbins=3,
         bins=pt_2_bins
     )
-    plot_processed_data(
+    plotter.plot_processed_data(
         processed_results=processed_data,
-        labels=[r'$p_T$ = 0-50 GeV', r'$p_T$ = 50-250 GeV', r'$p_T$ = 250-1000 GeV', r'$p_T$ = 1000-5000 GeV'],
+        # labels=[r'$p_T$ = 0-50 GeV', r'$p_T$ = 50-250 GeV', r'$p_T$ = 250-1000 GeV', r'$p_T$ = 1000-5000 GeV'],
         xlabel=r'$p_T[GeV]$',
         ylabel= r'$\sigma(p_T)/p_T^2$ $[GeV^{-1}]$',
         ylim=(0,0.0005),
@@ -550,187 +443,6 @@ def main(args):
         savename="res_pt2_v_pt_nobib"
 
     )
-
-
-    # In[ ]:
-
-
-
-
-
-    # In[ ]:
-
-
-
-
-
-    # ### BIB
-
-    # In[90]:
-
-
-    # bib_theta_all    = [bib_0_50_theta         , bib_50_250_theta         , bib_250_1000_theta         , np.degrees(fold_data(ak.flatten((bib_5TeV['LC_track_theta'][ak.flatten(bib_5TeV['LC_pt_match']>1000)]))))]
-    # bib_d0_all       = [bib_0_50['LC_d0']      , bib_50_250['LC_d0']      , bib_250_1000['LC_d0']      , fold_data(ak.flatten(bib_5TeV['LC_d0'][ak.flatten(bib_5TeV['LC_pt_match']>1000)]))]
-    # bib_pt_res_all   = [bib_0_50['LC_pt_res']  , bib_50_250['LC_pt_res']  , bib_250_1000['LC_pt_res']  , fold_data(ak.flatten(bib_5TeV['LC_pt_res'][ak.flatten(bib_5TeV['LC_pt_match']>1000)]))]
-    # bib_track_pt_all = [bib_0_50['LC_track_pt'], bib_50_250['LC_track_pt'], bib_250_1000['LC_track_pt'], fold_data(ak.flatten(bib_5TeV['LC_track_pt'][ak.flatten(bib_5TeV['LC_pt_match']>1000)]))]
-    # bib_pt_match_all = [bib_0_50['LC_pt_match'], bib_50_250['LC_pt_match'], bib_250_1000['LC_pt_match'], fold_data(ak.flatten(bib_5TeV['LC_pt_match'][ak.flatten(bib_5TeV['LC_pt_match']>1000)]))]
-    # bib_nhits_all    = [bib_0_50['LC_nhits']   , bib_50_250['LC_nhits']   , bib_250_1000['LC_nhits']   , fold_data(ak.flatten(bib_5TeV['LC_nhits'][ak.flatten(bib_5TeV['LC_pt_match']>1000)]))]
-
-    # bib_theta_all_masked = []
-    # bib_d0_all_masked = []
-    # bib_pt_res_all_masked = []
-    # bib_pt_res2_all_masked = []
-    # bib_pt_match_all_masked = []
-    # for i in range(len(bib_theta_all)):
-    #     x = bib_theta_all[i]
-    #     y = bib_d0_all[i]
-    #     w = bib_pt_match_all[i]
-    #     z = bib_pt_res_all[i] # truth-reco)/(truth pT)
-    #     t = bib_pt_res_all[i] /w # (truth-reco)/(truth pT^2)
-    #     v = bib_track_pt_all[i]
-    #     u = bib_nhits_all[i]
-    #     # Create a boolean mask for the condition
-    #     theta_cut = (0 <= x) & (x < 180)
-    #     pt_res_cut = np.abs(z) > 0
-    #     pt_cut = v > 1
-    #     d0_cut = y <= 0.1
-    #     nhits_cut = u > 4
-    #     # Apply the mask to filter the arrays
-    #     mask = theta_cut & pt_res_cut & pt_cut & d0_cut & nhits_cut
-    #     x_masked = x[mask]
-    #     y_masked = y[mask]
-    #     z_masked = z[mask]
-    #     w_masked = w[mask]
-    #     t_masked = t[mask]
-    #     bib_theta_all_masked.append(x_masked)
-    #     bib_d0_all_masked.append(y_masked)
-    #     bib_pt_res_all_masked.append(z_masked)
-    #     bib_pt_res2_all_masked.append(t_masked)
-    #     bib_pt_match_all_masked.append(w_masked)
-    # # bib_theta_all = ak.concatenate([theta_0_50, theta_50_250, theta_match],axis = 0)
-    # numpoints = 5
-    # array1 = np.linspace(-0.9,0.9,200)  # pt_0_50_bins
-    # array2 = np.linspace(-0.3,0.3,300)  # pt_50_250_bins
-    # array3 = np.linspace(-0.4,0.4,300)  # pt_250_1000_bins
-    # array4 = np.linspace(-0.2,0.2,300)  # pt_1000_5000_bins
-    # d0_bins = [array1, array2, array3, array4] #
-
-    # array1 = np.linspace(-0.1,0.1,100)  # pt_0_50_bins
-    # array2 = np.linspace(-0.1,0.1,300)  # pt_50_250_bins
-    # array3 = np.linspace(-0.1,0.1,300)  # pt_250_1000_bins
-    # array4 = np.linspace(-0.1,0.1,300)  # pt_1000_5000_bins
-    # pt_bins = [array1, array2, array3, array4] #
-
-    # array1 = np.linspace(-0.003,0.003,300)    # pt_0_50_bins
-    # array2 = np.linspace(-0.002,0.002,300)  # pt_50_250_bins
-    # array3 = np.linspace(-0.002,0.002,300) # pt_250_1000_bins
-    # array4 = np.linspace(-0.001,0.001,300)  # pt_1000_5000_bins
-    # pt_2_bins = [array1, array2, array3, array4]
-    # d0_ylim = (0,0.01)
-    # pt_ylim = (0,0.01)
-
-
-    # # In[92]:
-
-
-    # #d0 res versus theta
-    # processed_data = process_data(
-    #     datax=bib_theta_all_masked,
-    #     datay=bib_d0_all_masked,
-    #     numbins=numpoints,
-    #     bins=d0_bins,
-    #     theta=True
-    # )
-    # plot_processed_data(
-    #     processed_results=processed_data,
-    #     labels=[r'$p_T$ = 0-50 GeV', r'$p_T$ = 50-250 GeV', r'$p_T$ = 250-1000 GeV', r'$p_T$ = 1000-5000 GeV'],
-    #     xlabel=r'$\theta [\degree]$',
-    #     ylabel=r'$\sigma(d_0)$ [mm]',
-    #     ylim=(0.001,0.1),
-    #     log=True,
-    #     xlim=(0,180),
-    #     bib=True,
-    #     savename="res_d0_v_theta_bib"
-    # )
-    # # pt resolution versus theta
-    # processed_data = process_data(
-    #     datax=bib_theta_all_masked,
-    #     datay=bib_pt_res_all_masked,
-    #     numbins=numpoints,
-    #     bins=pt_bins,
-    #     theta=True,
-    # )
-    # plot_processed_data(
-    #     processed_results=processed_data,
-    #     labels=[r'$p_T$ = 0-50 GeV', r'$p_T$ = 50-250 GeV', r'$p_T$ = 250-1000 GeV', r'$p_T$ = 1000-5000 GeV'],
-    #     xlabel=r'$\theta[\degree]$',
-    #     ylabel=r'$\sigma(p_T)/p_T$',
-    #     ylim=(0.001,1.0),
-    #     xlim=(0,180),
-    #     log=True,
-    #     bib=True,
-    #     savename="res_pt_v_theta_bib"
-    # )
-    # # pt resolution versus pt
-    # processed_data = process_data(
-    #     datax=bib_pt_match_all_masked,
-    #     datay=bib_pt_res_all_masked,
-    #     numbins=3,
-    #     bins=(pt_bins),
-    # )
-    # plot_processed_data(
-    #     processed_results=processed_data,
-    #     labels=[r'$p_T$ = 0-50 GeV', r'$p_T$ = 50-250 GeV', r'$p_T$ = 250-1000 GeV', r'$p_T$ = 1000-5000 GeV'],
-    #     xlabel=r'$p_T$ [GeV]',
-    #     ylabel=r'$\sigma(p_T)/p_T$',
-    #     ylim=(0,0.1),
-    #     xlim=(0,5000),
-    #     bib=True,
-    #     savename="res_pt_v_pt_bib"
-    # )
-    # # pt2 resolution versus theta
-    # processed_data = process_data(
-    #     datax=bib_theta_all_masked,
-    #     datay=bib_pt_res2_all_masked,
-    #     numbins=numpoints,
-    #     bins=pt_2_bins,
-    #     theta=True,
-    # )
-    # plot_processed_data(
-    #     processed_results=processed_data,
-    #     labels=[r'$p_T$ = 0-50 GeV', r'$p_T$ = 50-250 GeV', r'$p_T$ = 250-1000 GeV', r'$p_T$ = 1000-5000 GeV'],
-    #     xlabel=r'$\theta[\degree]$',
-    #     ylabel= r'$\sigma(p_T)/p_T^2$ $[GeV^{-1}]$',
-    #     ylim=(0.00001,0.001),
-    #     log=True,
-    #     xlim=(0,180),
-    #     bib=True,
-    #     savename="res_pt2_v_theta_bib"
-    # )
-    # # pt2 resolution versus pt
-    # processed_data = process_data(
-    #     datax=bib_pt_match_all_masked,
-    #     datay=bib_pt_res2_all_masked,
-    #     numbins=3,
-    #     bins=(pt_2_bins)
-    # )
-    # plot_processed_data(
-    #     processed_results=processed_data,
-    #     labels=[r'$p_T$ = 0-50 GeV', r'$p_T$ = 50-250 GeV', r'$p_T$ = 250-1000 GeV', r'$p_T$ = 1000-5000 GeV'],
-    #     xlabel=r'$p_T$ [GeV]',
-    #     ylabel= r'$\sigma(p_T)/p_T^2$ $[GeV^{-1}]$',
-    #     ylim=(0,0.0003),
-    #     xlim=(1,5000),
-    #     xlog=True,
-    #     bib=True,
-    #     savename="res_pt2_v_pt_bib"
-    # )
-
-
-    # In[ ]:
-
-
-
 
 
     # # # Extra
@@ -758,11 +470,11 @@ def main(args):
     #     Returns:
     #         list: List containing fitted RMS and mean if rv=True and a Gaussian fit was successful; otherwise [0, 0].
     #     """
-    #     data_flatx = np.array(np.ravel(datax)).T
-    #     data_flaty = np.array(np.ravel(datay)).T
+    #     data_flatx_alt = np.array(np.ravel(datax)).T
+    #     data_flaty_alt = np.array(np.ravel(datay)).T
     #     for i in range(len(x_bins)-1):
     #         # Select data points within the specified x slice
-    #         slice_data = data_flaty[(data_flatx >= x_bins[i]) & (data_flatx < x_bins[i + 1])]
+    #         slice_data = data_flaty_alt[(data_flatx_alt >= x_bins[i]) & (data_flatx_alt < x_bins[i + 1])]
     #         gaussian_fit = True
     #         double_gauss = False
     #         try:

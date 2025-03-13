@@ -32,7 +32,7 @@ def calculate_efficiencies(track_data_list, truth_data_list, num_bins=10, min_va
             bin_max = efficiency_bins[j + 1]
             track_data_in_bin = np.ravel(track_data)[(np.ravel(track_data) >= bin_min) & (np.ravel(track_data) < bin_max)]
             truth_data_in_bin = np.ravel(truth_data)[(np.ravel(truth_data) >= bin_min) & (np.ravel(truth_data) < bin_max)]
-            if len(track_data_in_bin) != 0:
+            if((len(truth_data_in_bin) != 0) and (len(track_data_in_bin) != 0)):
                 efficiency = len(track_data_in_bin) / len(truth_data_in_bin)
                 error = efficiency * np.sqrt((1 - efficiency) / len(track_data_in_bin))
             # If bin is empty, efficiency is 0

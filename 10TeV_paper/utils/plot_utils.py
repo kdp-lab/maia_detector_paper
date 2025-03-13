@@ -1,4 +1,4 @@
-
+import os
 import matplotlib.pyplot as plt
 import awkward as ak
 import numpy as np
@@ -149,5 +149,156 @@ def plot_efficiencies(results, min_value, max_value, xlabel=None, ylim=None, bib
     if len(savename)>0:
         plt.savefig(savename+".pdf", format='pdf', bbox_inches='tight')
 
-
     plt.show()
+
+class Plotter():
+
+    def __init__(self):
+        self.label_upper_right = r'$\it{MAIA}$ Detector Concept'
+        self.data_label = 'Simulation, no BIB'
+        self.lattice_label = r'Lattice v04'
+        self.com_tev = 10
+        self.outdir = None
+
+    def SetUpperRightLabel(self,val):
+        self.label_upper_right = val
+
+    def SetDataLabel(self,val):
+        self.data_label = val
+
+    def SetLatticeLabel(self,val):
+        self.lattice_label = val
+
+    def SetCOMTev(self,val):
+        self.com_tev = val
+
+    def SetOutputDirectory(self,val):
+        self.outdir = val
+        if(self.outdir is not None):
+            os.makedirs(self.outdir,exist_ok=True)
+
+    def plot_processed_data(self,processed_results, labels=None, xlabel='', ylabel='', title='', fontsize=20, log=False, xlog=False, ylim=None, xlim=None, savename=''):
+        """
+        Plot the processed RMS data.
+
+        Parameters:
+            processed_results (list): List of dictionaries containing processed data.
+            labels (list of str, optional): Labels for the data series.
+            xlabel (str, optional): X-axis label.
+            ylabel (str, optional): Y-axis label.
+            title (str, optional): Plot title.
+            fontsize (int, optional): Font size for the plot labels.
+            log (bool, optional): Use a logarithmic y-axis scale.
+            ylim (tuple, optional): Y-axis limits.
+            xlim (tuple, optional): X-axis limits.
+            savepdf (bool, optional): Save the plot as a PDF file.
+            savename (str, optional): Name of the saved PDF file.
+        """
+        fig, ax = plt.subplots(figsize=(8,6))
+
+        # Loop over the processed results (dictionary of bin centers, rms values, sem values, and theta width) and create errorbar graphs
+        for i, result in enumerate(processed_results):
+            label = labels[i] if labels else ''
+            color = None if labels else plt.rcParams['axes.prop_cycle'].by_key()['color'][0]
+            ax.errorbar(
+                result['bin_centers'],
+                result['rms_values'],
+                xerr=result['x_err'],
+                yerr=result['sem_values'],
+                fmt='o',
+                markersize=6,
+                label=label,
+                markerfacecolor=color,
+                markeredgecolor=color,
+                ecolor=color
+            )
+
+        # Custom Muon Collider text
+        if len(title) > 0:
+            ax.set_title(title, fontsize=fontsize)
+        else:
+            ax.set_title(self.label_upper_right, fontsize=fontsize, loc = 'right')
+
+        plt.text(0.04, 0.92, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
+        plt.text(0.04, 0.85, self.data_label, transform=plt.gca().transAxes)
+
+        plt.text(0.04, 0.78, self.lattice_label, transform=plt.gca().transAxes)
+        com_label = r'$\sqrt{s}$ = ' +r'{}'.format(self.com_tev) +   r' TeV'
+        plt.text(0.04, 0.71, com_label, transform=plt.gca().transAxes)
+
+        # handle axes
+        ax.set_xlabel(xlabel, loc='right', fontsize=fontsize+5)
+        ax.set_ylabel(ylabel, loc='top'  , fontsize=fontsize+5)
+        if log : ax.set_yscale('log')
+        if xlog: ax.set_xscale('log')
+        if ylim is not None: ax.set_ylim(ylim)
+        if xlim is not None: ax.set_xlim(xlim)
+        if labels:
+            ax.legend(fontsize=fontsize-2,loc='upper right')
+        ax.tick_params(labelsize=fontsize)
+        #ax.yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
+        #ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+
+        if len(savename)>0:
+            if(self.outdir is not None):
+                savename = '{}/{}'.format(self.outdir,savename)
+            plt.savefig(savename+".pdf", format='pdf', bbox_inches='tight')
+
+        plt.show()
+
+    def plot_efficiencies(self,results, min_value, max_value, xlabel=None, ylim=None, bib=False, labels="", misctext='', savepdf=False, savename=''):
+        plt.figure(figsize=(8, 6))
+
+        # Assign plotting parameters
+        alpha = 1.0
+        size = 10
+
+        # When plotting multiple datasets, loop through label names, decrease the size and alpha of the markers
+        for i, (bin_centers, efficiencies, errors, bin_widths) in enumerate(results):
+            label = labels[i] if labels else f"Dataset {i+1}"
+            plt.errorbar(bin_centers, efficiencies, yerr=errors, xerr=bin_widths, fmt='o', label=label, markersize=size, alpha=alpha)
+            size -= 2
+            alpha -= 0.2
+
+        # Set x and y limits (with some leeway)
+
+        #if "bib_eff_vs_pt" in savename: max_value=1000
+        #if "nobib_eff_vs_pt_barrel" in savename: max_value=5000
+        #if "nobib_eff_vs_pt_endcap" in savename: max_value=3000
+        if "vs_theta" in savename:
+            minvalue = 0
+            maxvalue = 180
+        if "vs_pt" in savename :
+            plt.xscale('log')
+            x, y = [min_value, max_value], [1, 1]
+            plt.xlim(min_value, max_value)
+        else :
+            plt.xlim(min_value-10, max_value+10)
+            x, y = [min_value-10, max_value+10], [1, 1]
+        plt.ylim(0, 1.35)
+
+        plt.plot(x, y, linestyle="dashed")
+
+        if xlabel is not None: plt.xlabel(xlabel, loc='right', fontsize=20)
+        plt.ylabel('Reconstruction Efficiency', loc='top', fontsize=20)
+        plt.title(self.label_upper_right, fontsize=20, loc = 'right')
+
+        # Custom Muon Collider text
+        plt.text(0.04, 0.92, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
+        plt.text(0.04, 0.85, self.data_label, transform=plt.gca().transAxes)
+        combined_label = self.lattice_label + r', ' + r'$\sqrt{s}$ = ' +r'{}'.format(self.com_tev) +   r' TeV'
+        plt.text(0.04, 0.77, combined_label, transform=plt.gca().transAxes)
+        if len(misctext): plt.text(0.8-len(misctext)*0.004, 0.92, misctext, transform=plt.gca().transAxes)
+
+        plt.xticks(fontsize=20)
+        if "nobib_eff_vs_pt_barrel" in savename:
+            plt.xticks(ticks=[1,10,100,1000,5000],fontsize=20)
+        plt.yticks(fontsize=20)
+        plt.legend(loc='lower left', fontsize=20)
+
+        if len(savename)>0:
+            if(self.outdir is not None):
+                savename = '{}/{}'.format(self.outdir,savename)
+            plt.savefig(savename+".pdf", format='pdf', bbox_inches='tight')
+
+        plt.show()
