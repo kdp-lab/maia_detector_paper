@@ -45,7 +45,7 @@ class ROOTDataLoader():
     def Load(self):
         if(self.filename is None):
             return
-        self.tree = ur.open(self.filename)
+        self.file = ur.open(self.filename)
         self.tree = self.file[self.treename]
 
     def __getitem__(self,key):
