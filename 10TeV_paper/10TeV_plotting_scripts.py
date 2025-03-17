@@ -13,7 +13,7 @@ import argparse as ap
 
 from utils.data_utils import DataLoader
 from utils.plot_utils import Plotter
-from utils.calc_utils import calculate_efficiencies, calculate_efficiences_v2,combine_masks
+from utils.calc_utils import calculate_efficiences,combine_masks
 from utils.fit_utils import gaussian, double_gaussian, fit_gaussian, fit_double_gaussian, double_gaussian_mean_rms
 
 # Function to process data and calculate RMS values
@@ -123,14 +123,20 @@ def main(args):
     parser.add_argument('-o','--outputDirectory',type=str,default='output')
     parser.add_argument('-dl','--dataLabel',type=str,default='Simulation, BIB')
     parser.add_argument('-ll','--latticeLabel',type=str,default='Lattice v08')
+    parser.add_argument('-s','--suffix',type=str,default=None)
     args = vars(parser.parse_args())
     infile = args['inputFile']
     outdir = args['outputDirectory']
     data_label = args['dataLabel']
     lattice_label = args['latticeLabel']
+    suffix = args['suffix']
+    if(suffix is None):
+        if('no bib' in data_label.lower()):
+            suffix = 'nobib'
+        else:
+            suffix = 'bib'
 
     hep.style.use(hep.style.ATLAS)
-
 
     # Do some mapping of keys -- since the old JSON files labeled things differently than we now do with ROOT ntuples.
     # Maybe this will ultimately need to be simplified? Our new SLCIO-Analyzer will use the ROOT-style keys for JSON too.
@@ -229,8 +235,11 @@ def main(args):
     # Clean track using pT >=1 GeV, d0 <= 0.1 mm, and nhits > 4
     # track_clean = (ak.flatten(LC_track_pt)>=1) & (ak.flatten(LC_d0)<= 0.1) & (ak.flatten(LC_nhits)>4)
 
-    # TODO: defining cleaning differently here, as an awkward array
-    track_clean2 = (LC_track_pt>=1) * (LC_d0<= 0.1) * (LC_nhits>4)
+    # Defining cleaning differently here, as an awkward array
+    track_pt_cut = 1. # GeV
+    d0_cut = 0.1 # mm?
+    nhits_cut = 4
+    track_clean = (LC_track_pt>=track_pt_cut) * (LC_d0<= d0_cut) * (LC_nhits>nhits_cut)
 
     # Define the eta transition region from barrel to endcap
     transition_region = 1
@@ -244,9 +253,9 @@ def main(args):
     # Sanity check with some overall efficiencies
     # print(len((LC_pt_match[track_barrel])), len((LC_pt_match[track_endcap])), len(LC_pt_match), len(mcp_mu_pt[truth_barrel]), len((mcp_mu_pt[truth_endcap])), len(mcp_mu_pt))
     print("For no BIB:")
-    print("Overall efficiency:", len((LC_pt_match))/len((mcp_mu_pt)))
-    print("Barrel Efficiency:", len((LC_pt_match[track_barrel]))/len((mcp_mu_pt[truth_barrel])))
-    print("Endcap Efficiency:", len((LC_pt_match[track_endcap]))/len((mcp_mu_pt[truth_endcap])))
+    # print("Overall efficiency:", len((LC_pt_match))/len((mcp_mu_pt)))
+    # print("Barrel Efficiency:", len(ak.flatten(LC_pt_match[truth_barrel]))/len(ak.flatten(mcp_mu_pt[truth_barrel])))
+    # print("Endcap Efficiency:", len(ak.flatten(LC_pt_match[truth_endcap]))/len(ak.flatten(mcp_mu_pt[truth_endcap])))
     # print("Lost Efficiency after cleaning:", len((LC_pt_match))/len((mcp_mu_pt)) - len((LC_pt_match)[track_clean])/len((mcp_mu_pt)))
 
     # Binned in theta
@@ -256,18 +265,18 @@ def main(args):
     #     [mcp_mu_theta,mcp_mu_theta]
     # )
 
-    results, min_value, max_value = calculate_efficiences_v2(
+    results, min_value, max_value = calculate_efficiences(
         LC_track_theta,
         mcp_mu_theta,
         mask_pairs = [
             (None,None), # no cleaning,
-            (track_clean2,None) # track cleaning
+            (track_clean,None) # track cleaning
             ]
         )
     plotter.plot_efficiencies(results, min_value, max_value,
-                    xlabel=r"$\theta [\degree]$ ",
+                    xlabel=r"Muon $\theta [\degree]$ ",
                     labels=["Before Cleaning", "After Cleaning"],
-                    savename='nobib_eff_vs_theta'
+                    savename='eff_vs_theta_{}'.format(suffix)
                     )
 
 
@@ -281,36 +290,43 @@ def main(args):
     #     custom_bins=custom_bins
     # )
 
-    results, min_value, max_value = calculate_efficiences_v2(
+    results, min_value, max_value = calculate_efficiences(
         LC_pt_match,
         mcp_mu_pt,
         mask_pairs=[
             (truth_barrel,truth_barrel), # for muons in the barrel region
-            (truth_barrel,truth_barrel), # for muons in the barrel region
-            # (combine_masks((track_clean2,truth_barrel)),truth_barrel) # track cleaning # TODO: broken
+            (combine_masks([track_clean,truth_barrel]),truth_barrel), # for muons in the barrel region, with track cleaning applied to tracks
             ],
         custom_bins=custom_bins)
     plotter.plot_efficiencies(results, min_value, max_value,
-                    xlabel="$p_T$ [GeV]",
+                    xlabel="Muon $p_T$ [GeV]",
                     labels=["Before Cleaning", "After Cleaning"],
                     misctext=r'$40^{\circ}<\theta<140^{\circ}$',
-                    savename='nobib_eff_vs_pt_barrel'
+                    savename='eff_vs_pt_barrel_{}'.format(suffix)
                     )
 
-    # print('Computing reconstruction efficiency as a function of pT, for endcap region.')
+    print('Computing reconstruction efficiency as a function of pT, for endcap region.')
     # # results, min_value, max_value = calculate_efficiencies(
     # #     [LC_pt_match[track_endcap],LC_pt_match[track_clean & track_endcap]],
     # #     [mcp_mu_pt [truth_endcap],mcp_mu_pt[truth_endcap]],
     # #     custom_bins=custom_bins
     # # )
 
-    # results, min_value, max_value = calculate_efficiences_v2(LC_pt_match,mcp_mu_pt,track_clean2,custom_bins=custom_bins)
-    # plotter.plot_efficiencies(results, min_value, max_value,
-    #                 xlabel="$p_T$ [GeV]",
-    #                 labels=["Before Cleaning", "After Cleaning"],
-    #                 misctext=r'$\theta<40^{\circ}$ or $\theta>140^{\circ}$',
-    #                 savename='nobib_eff_vs_pt_endcap'
-    #                 )
+    results, min_value, max_value = calculate_efficiences(
+        LC_pt_match,
+        mcp_mu_pt,
+        mask_pairs=[
+            (truth_endcap,truth_endcap), # for muons in the barrel region
+            (combine_masks([track_clean,truth_endcap]),truth_endcap), # for muons in the barrel region, with track cleaning applied to tracks
+            ],
+        custom_bins=custom_bins)
+
+    plotter.plot_efficiencies(results, min_value, max_value,
+                    xlabel="Muon $p_T$ [GeV]",
+                    labels=["Before Cleaning", "After Cleaning"],
+                    misctext=r'$\theta<40^{\circ}$ or $\theta>140^{\circ}$',
+                    savename='eff_vs_pt_endcap_{}'.format(suffix)
+                    )
 
     return
 
