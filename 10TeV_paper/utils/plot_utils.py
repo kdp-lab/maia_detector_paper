@@ -79,9 +79,10 @@ class Plotter():
 
         plt.text(0.04, 0.92, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
         plt.text(0.04, 0.85, self.data_label, transform=plt.gca().transAxes)
-        plt.text(0.04, 0.78, self.lattice_label, transform=plt.gca().transAxes)
         com_label = r'$\sqrt{s}$ = ' +r'{}'.format(self.com_tev) +   r' TeV'
-        plt.text(0.04, 0.71, com_label, transform=plt.gca().transAxes)
+        combined_label = '{}, {}'.format(self.lattice_label,com_label)
+        plt.text(0.04, 0.78, combined_label, transform=plt.gca().transAxes)
+        # plt.text(0.04, 0.71, com_label, transform=plt.gca().transAxes)
 
         if(misctext is not None):
             if(type(misctext) != list):
@@ -109,7 +110,7 @@ class Plotter():
 
         plt.show()
 
-    def plot_efficiencies(self,results, min_value, max_value, xlabel=None, labels="", misctext='', bottom_label=None, savename='',xlim=None):
+    def plot_efficiencies(self,results, min_value, max_value, xlabel=None, labels="", misctext='', bottom_label=None, savename='',xlim=None,ylim=None, label_block_x_up=None):
         plt.figure(figsize=(8, 6))
 
         for i, hist in enumerate(results):
@@ -151,19 +152,22 @@ class Plotter():
             x, y = xlim, [1, 1]
             plt.xlim(*xlim)
 
-        plt.ylim(0, 1.35)
+        if(ylim is None): ylim = (0,1.35)
+        plt.ylim(*ylim)
 
-        plt.plot(x, y, linestyle="dashed")
+        plt.plot(x, y, linestyle="dashed",linewidth=1,color='xkcd:grey')
 
         if xlabel is not None: plt.xlabel(xlabel, loc='right', fontsize=20)
         plt.ylabel('Reconstruction Efficiency', loc='top', fontsize=20)
         plt.title(self.label_upper_right, fontsize=20, loc = 'right')
 
         # Custom Muon Collider text
-        plt.text(0.04, 0.92, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
-        plt.text(0.04, 0.85, self.data_label, transform=plt.gca().transAxes)
+        if(label_block_x_up is None):
+            label_block_x_up = 0.92
+        plt.text(0.04, label_block_x_up, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
+        plt.text(0.04, label_block_x_up-0.075, self.data_label, transform=plt.gca().transAxes)
         combined_label = self.lattice_label + r', ' + r'$\sqrt{s}$ = ' +r'{}'.format(self.com_tev) +   r' TeV'
-        plt.text(0.04, 0.77, combined_label, transform=plt.gca().transAxes)
+        plt.text(0.04, label_block_x_up-0.15 , combined_label, transform=plt.gca().transAxes)
 
         # bottom label
         if(bottom_label is not None):

@@ -206,31 +206,31 @@ def calculate_efficiencies(track_data, truth_data, mask_pairs, num_bins=10, min_
     nevents = len(track_data)
     # print('efficiency_bins = ',efficiency_bins)
 
+    # masks allow us to optionally apply track cleaning as a Boolean array.
     for mask_pair in mask_pairs:
         track_mask, truth_mask = mask_pair
-        if(truth_mask is None):
+        if(truth_mask is None): # if not masking out via any cuts, just take all events
             truth_mask = np.full(nevents,True)
-
         if(track_mask is None):
-            track_mask = np.full(nevents,True)
+            track_mask = np.full(nevents,True) # NOTE: allowing masks to be different, in case reco has extra cuts (e.g. cleaning)
 
         numerator   = rt.TH1D(RN(),'',num_bins,efficiency_bins)
         denominator = rt.TH1D(RN(),'',num_bins,efficiency_bins)
 
         for i in range(nevents): # looping thru awkward arrays
-
             if(not(truth_mask[i])): continue
 
             track = track_data[i] # in practice, might be empty -- if we failed to get a track
-            muon = truth_data[i]
+            muon = truth_data[i][0] # basically assuming this to be of length 1
             # bin_idx = (np.digitize(muon,efficiency_bins) - 1)[0]
 
-            denominator.Fill(muon[0]) # NOTE: Making some assumptions about muon and track arrays, namely that they are of length 1 per event
+            denominator.Fill(muon)
 
-            if(len(track) == 0): continue
+            if(len(track) == 0): continue # will happen if there is no matched track
 
-            if(track_mask[i]):
-                numerator.Fill(muon[0]) # NOTE: filling position corresponding to the matched *muon* kinematics, not the track kinematics
+            if(not(track_mask[i])): continue
+
+            numerator.Fill(muon) # NOTE: filling bin corresponding to the matched *muon* kinematics, not the track kinematics!
 
         # prevent divide-by-zero errors
         for i in range(denominator.GetNbinsX()):
@@ -240,17 +240,20 @@ def calculate_efficiencies(track_data, truth_data, mask_pairs, num_bins=10, min_
         efficiency = rt.TH1D(numerator)
         efficiency.Divide(denominator)
 
-        # NOTE: Should review how this uncertainty is calc'd
-        uncertainty = np.zeros(efficiency.GetNbinsX())
-        for i,uncert in enumerate(uncertainty):
-            if(numerator.GetBinContent(i+1) == 0.): continue
-
+        # NOTE: ROOT might be able to do some of this automatically? Will do by hand, to be safe.
         for i in range(efficiency.GetNbinsX()):
             num = numerator.GetBinContent(i+1)
+            num_e = numerator.GetBinError(i+1)
+            denom = denominator.GetBinContent(i+1)
+            denom_e = denominator.GetBinError(i+1)
+            eff = efficiency.GetBinContent(i+1)
+
             uncert = 0.
-            if(num != 0.):
-                eff = efficiency.GetBinContent(i+1)
-                uncert = eff * np.sqrt((1.-eff)/num)
+            if(num != 0. and denom != 0.):
+                uncert = eff * np.sqrt( np.square(num_e / num) + np.square(denom_e / denom) )
+                print('a = {:.2e} +/- {:.2e}'.format(num,num_e))
+                print('b = {:.2e} +/- {:.2e}'.format(denom,denom_e))
+                print('\t-> uncertainty = {:.2e}'.format(uncert))
             efficiency.SetBinError(i+1,uncert)
 
         # package things in a list, since this is how old code did it

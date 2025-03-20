@@ -160,9 +160,7 @@ def main(args):
 
     key_mapping = CreateKeyMapping(infile)
 
-    # Load all the data.
-    # TODO: This needs a major rework! Shouldn't be loading all these different hard-coded files, make this an argument!!! -Jan
-
+    # Load the data. For ROOT files, uproot will handle things so that memory usage is reasonable.
     data_loader = DataLoader()
     data_loader.SetFilename(infile)
     data_loader.Load()
