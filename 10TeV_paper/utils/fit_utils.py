@@ -1,15 +1,23 @@
+import uuid
 import numpy as np
+import ROOT as rt
 from scipy.optimize import curve_fit
 
+def RN():
+    return str(uuid.uuid4())
+
 # Function for creating a Gaussian fit
-def gaussian(x, a, mu, sigma):
-    return a * np.exp(-0.5 * ((x - mu) / sigma)**2)
+# def gaussian(x, a, mu, sigma):
+#     return a * np.exp(-0.5 * ((x - mu) / sigma)**2)
+
+def gaussian(x,p):
+    return p[0] * np.exp(-0.5 * np.square((x[0] - p[1]) / p[2]))
 
 def double_gaussian(x, a1, mu1, sigma1, a2, mu2, sigma2):
     return gaussian(a1,mu1,sigma1) + gaussian(a2,mu2,sigma2)
 
 # Function for fitting a Gaussian to the data
-def fit_gaussian(slice_data, bins, mean = 0, rms = 0.01):
+def fit_gaussian(slice_data, bins, mean = 0, rms = None, mean_bounds=(-0.001,0.001)):
     """
     Fit a Gaussian to the input data slice.
 
@@ -22,12 +30,46 @@ def fit_gaussian(slice_data, bins, mean = 0, rms = 0.01):
     Returns:
         tuple: Tuple containing fit parameters (popt), covariance matrix (pcov), and bin centers.
     """
-    if mean is None:
-        mean = np.mean(slice_data)
-    if rms is None:
-        rms = np.sqrt(np.mean(np.square(slice_data - mean)))
+
     if bins is None:
         bins = np.linspace(np.min(slice_data), np.max(slice_data), int(np.sqrt(len(slice_data))))
+
+    h = rt.TH1D(RN(),'',len(bins)-1,bins)
+    for entry in slice_data:
+        h.Fill(entry)
+
+    if mean is None:
+        mean = h.GetMean() #np.mean(slice_data)
+    if rms is None:
+        rms = h.GetRMS() # NOTE: This is the standard deviation, see ROOT docs! | np.std(slice_data) # np.sqrt(np.mean(np.square(slice_data - mean))) # - mean
+
+    # f = rt.TF1('f_{}'.format(RN()),lambda x, p: gaussian(x,p[0],p[1],p[2]),bins[0],bins[-1],3)
+    f = rt.TF1('f_{}'.format(RN()),gaussian,bins[0],bins[-1],3)
+    fname = f.GetName()
+    f.SetParameter(0, 0.9 * h.GetMaximum())
+    # print('Set par0 to {:.2f}'.format(f.GetParameter(0)))
+    f.SetParameter(1,mean)
+    f.SetParameter(2,0.8 * rms)
+
+    f.SetParLimits(0,0.5 * h.GetMaximum(),1.5 * h.GetMaximum())
+    f.SetParLimits(1,*mean_bounds)
+    f.SetParLimits(2,0.05 * rms,3. * rms)
+    # f = rt.TF1(RN(),'gaus',bins[0],bins[-1])
+
+    initial_parameters = np.array([f.GetParameter(x) for x in range(3)])
+
+    fit_result = h.Fit(fname,'RQSI')
+    parameters = np.array([f.GetParameter(x) for x in range(3)])
+    uncerts    = np.array([f.GetParError(x) for x in range(3)])
+    return {
+        'fit_result_pointer':fit_result,
+        'initial_parameters':initial_parameters,
+        'parameters':parameters,
+        'uncertainties':uncerts,
+        'bins':bins,
+        'histogram':h
+    }
+
     counts, bin_edges = np.histogram(slice_data, bins=bins)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
     popt, pcov = curve_fit(gaussian, bin_centers, counts, p0=[max(counts), mean, rms])
@@ -82,7 +124,7 @@ def double_gaussian_mean_rms(popt, pcov):
     rms2_uncertainty = np.sqrt(pcov[5, 5])  # Uncertainty of rms2
 
     # And assuming w1 and w2 are your weights for rms1 and rms2:
-    # For example, let's use the amplitudes as weights
+    # For example, let's use the amplitudes as weights # TODO: Code has lots of things that seem AI-written, need to clean-up/remove. -Jan
     w1 = amp1 / (amp1 + amp2)
     w2 = amp2 / (amp1 + amp2)
 

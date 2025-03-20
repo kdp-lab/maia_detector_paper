@@ -2,66 +2,7 @@ import os
 import matplotlib.pyplot as plt
 import awkward as ak
 import numpy as np
-
-def plot_efficiencies(results, min_value, max_value, xlabel=None, bib=False, labels="", misctext='', savename=''):
-    plt.figure(figsize=(8, 6))
-
-    # Assign plotting parameters
-    alpha = 1.0
-    size = 10
-
-    # When plotting multiple datasets, loop through label names, decrease the size and alpha of the markers
-    for i, (bin_centers, efficiencies, errors, bin_widths) in enumerate(results):
-        label = labels[i] if labels else f"Dataset {i+1}"
-        plt.errorbar(bin_centers, efficiencies, yerr=errors, xerr=bin_widths, fmt='o', label=label, markersize=size, alpha=alpha)
-        size -= 2
-        alpha -= 0.2
-
-    # Set x and y limits (with some leeway)
-
-    #if "bib_eff_vs_pt" in savename: max_value=1000
-    #if "nobib_eff_vs_pt_barrel" in savename: max_value=5000
-    #if "nobib_eff_vs_pt_endcap" in savename: max_value=3000
-    if "vs_theta" in savename:
-        minvalue = 0
-        maxvalue = 180
-    if "vs_pt" in savename :
-        plt.xscale('log')
-        x, y = [min_value, max_value], [1, 1]
-        plt.xlim(min_value, max_value)
-    else :
-        plt.xlim(min_value-10, max_value+10)
-        x, y = [min_value-10, max_value+10], [1, 1]
-    plt.ylim(0, 1.35)
-
-
-    plt.plot(x, y, linestyle="dashed")
-
-    if xlabel is not None: plt.xlabel(xlabel, loc='right', fontsize=20)
-    plt.ylabel('Reconstruction Efficiency', loc='top', fontsize=20)
-    plt.title(r'$\it{MAIA}$ Detector Concept', fontsize=20, loc = 'right')
-
-    # Custom Muon Collider text
-    plt.text(0.04, 0.92, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
-    label = "Simulation"
-    if bib: label += ', with BIB'
-    else  : label += ', no BIB'
-    plt.text(0.04, 0.85, label, transform=plt.gca().transAxes)
-    plt.text(0.04, 0.77, r'Lattice v04, $\sqrt{s}$ = 10 TeV', transform=plt.gca().transAxes)
-    if len(misctext): plt.text(0.8-len(misctext)*0.004, 0.92, misctext, transform=plt.gca().transAxes)
-
-
-
-    plt.xticks(fontsize=20)
-    if "nobib_eff_vs_pt_barrel" in savename:
-        plt.xticks(ticks=[1,10,100,1000,5000],fontsize=20)
-    plt.yticks(fontsize=20)
-    plt.legend(loc='lower left', fontsize=20)
-
-    if len(savename)>0:
-        plt.savefig(savename+".pdf", format='pdf', bbox_inches='tight')
-
-    plt.show()
+import ROOT as rt
 
 class Plotter():
 
@@ -89,7 +30,7 @@ class Plotter():
         if(self.outdir is not None):
             os.makedirs(self.outdir,exist_ok=True)
 
-    def plot_processed_data(self,processed_results, labels=None, xlabel='', ylabel='', title='', fontsize=20, log=False, xlog=False, ylim=None, xlim=None, savename=''):
+    def plot_processed_data(self,processed_results, labels=None, xlabel='', ylabel='', title='', misctext=None, fontsize=20, log=False, xlog=False, ylim=None, xlim=None, savename=''):
         """
         Plot the processed RMS data.
 
@@ -109,16 +50,21 @@ class Plotter():
         fig, ax = plt.subplots(figsize=(8,6))
 
         # Loop over the processed results (dictionary of bin centers, rms values, sem values, and theta width) and create errorbar graphs
-        for i, result in enumerate(processed_results):
+        for i, hist in enumerate(processed_results):
             label = labels[i] if labels else ''
             color = None if labels else plt.rcParams['axes.prop_cycle'].by_key()['color'][0]
+            nbins = hist.GetNbinsX()
+            bin_centers = [hist.GetBinCenter(i+1) for i in range(nbins)]
+            rms_values = [hist.GetBinContent(i+1) for i in range(nbins)]
+            errors = [hist.GetBinError(i+1) for i in range(nbins)]
+            bin_widths = np.array([hist.GetBinWidth(i+1) for i in range(nbins)])
             ax.errorbar(
-                result['bin_centers'],
-                result['rms_values'],
-                xerr=result['x_err'],
-                yerr=result['sem_values'],
+                bin_centers,
+                rms_values,
+                xerr=bin_widths/2.,
+                yerr=errors,
                 fmt='o',
-                markersize=6,
+                markersize=3, #6
                 label=label,
                 markerfacecolor=color,
                 markeredgecolor=color,
@@ -137,6 +83,12 @@ class Plotter():
         com_label = r'$\sqrt{s}$ = ' +r'{}'.format(self.com_tev) +   r' TeV'
         plt.text(0.04, 0.71, com_label, transform=plt.gca().transAxes)
 
+        if(misctext is not None):
+            if(type(misctext) != list):
+                misctext = [misctext]
+            for i,line in enumerate(misctext):
+                plt.text(0.04, 0.71 - 0.07 * (i+1), line, fontsize=fontsize-3, transform=plt.gca().transAxes)
+
         # handle axes
         ax.set_xlabel(xlabel, loc='right', fontsize=fontsize+5)
         ax.set_ylabel(ylabel, loc='top'  , fontsize=fontsize+5)
@@ -145,7 +97,7 @@ class Plotter():
         if ylim is not None: ax.set_ylim(ylim)
         if xlim is not None: ax.set_xlim(xlim)
         if labels:
-            ax.legend(fontsize=fontsize-2,loc='upper right')
+            ax.legend(fontsize=fontsize-3,loc=(0.5,0.71))
         ax.tick_params(labelsize=fontsize)
         #ax.yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
         #ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
@@ -157,19 +109,27 @@ class Plotter():
 
         plt.show()
 
-    def plot_efficiencies(self,results, min_value, max_value, xlabel=None, labels="", misctext='', savename=''):
+    def plot_efficiencies(self,results, min_value, max_value, xlabel=None, labels="", misctext='', bottom_label=None, savename='',xlim=None):
         plt.figure(figsize=(8, 6))
 
-        # Assign plotting parameters
-        alpha = 1.0
-        size = 10
+        for i, hist in enumerate(results):
+            nbins = hist.GetNbinsX()
+            bin_centers = [hist.GetBinCenter(i+1) for i in range(nbins)]
+            efficiencies = [hist.GetBinContent(i+1) for i in range(nbins)]
+            errors = [hist.GetBinError(i+1) for i in range(nbins)]
+            bin_widths = np.array([hist.GetBinWidth(i+1) for i in range(nbins)])
 
-        # When plotting multiple datasets, loop through label names, decrease the size and alpha of the markers
-        for i, (bin_centers, efficiencies, errors, bin_widths) in enumerate(results):
-            label = labels[i] if labels else f"Dataset {i+1}"
-            plt.errorbar(bin_centers, efficiencies, yerr=errors, xerr=bin_widths, fmt='o', label=label, markersize=size, alpha=alpha)
-            size -= 2
-            alpha -= 0.2
+            label = labels[i] if labels else None
+            plt.errorbar(
+                bin_centers,
+                efficiencies,
+                yerr=errors,
+                xerr=bin_widths/2.,
+                fmt='o',
+                label=label,
+                markersize=3
+            )
+
 
         # Set x and y limits (with some leeway)
 
@@ -179,13 +139,18 @@ class Plotter():
         # if "vs_theta" in savename:
         #     minvalue = 0
         #     maxvalue = 180
-        if "vs_pt" in savename :
-            plt.xscale('log')
-            x, y = [min_value, max_value], [1, 1]
-            plt.xlim(min_value, max_value)
-        else :
-            plt.xlim(min_value-10, max_value+10)
-            x, y = [min_value-10, max_value+10], [1, 1]
+        if(xlim is None):
+            if "vs_pt" in savename :
+                plt.xscale('log')
+                x, y = [min_value, max_value], [1, 1]
+                plt.xlim(min_value, max_value)
+            else :
+                plt.xlim(min_value-10, max_value+10)
+                x, y = [min_value-10, max_value+10], [1, 1]
+        else:
+            x, y = xlim, [1, 1]
+            plt.xlim(*xlim)
+
         plt.ylim(0, 1.35)
 
         plt.plot(x, y, linestyle="dashed")
@@ -199,6 +164,13 @@ class Plotter():
         plt.text(0.04, 0.85, self.data_label, transform=plt.gca().transAxes)
         combined_label = self.lattice_label + r', ' + r'$\sqrt{s}$ = ' +r'{}'.format(self.com_tev) +   r' TeV'
         plt.text(0.04, 0.77, combined_label, transform=plt.gca().transAxes)
+
+        # bottom label
+        if(bottom_label is not None):
+            if(type(bottom_label) != list): bottom_label = [bottom_label]
+            for i,line in enumerate(bottom_label):
+                plt.text(0.04, 0.14 - i*0.07, line, transform=plt.gca().transAxes)
+
         if len(misctext): plt.text(0.8-len(misctext)*0.004, 0.92, misctext, transform=plt.gca().transAxes)
 
         plt.xticks(fontsize=20)
@@ -206,7 +178,8 @@ class Plotter():
             plt.xticks(ticks=[1,10,100,1000,5000],fontsize=20)
         plt.yticks(fontsize=20)
         # plt.legend(loc='lower left', fontsize=20)
-        plt.legend(loc=(0.575, 0.725), fontsize=16)
+        if(labels is not None):
+            plt.legend(loc=(0.575, 0.725), fontsize=16)
 
         if len(savename)>0:
             if(self.outdir is not None):
@@ -214,7 +187,6 @@ class Plotter():
             plt.savefig(savename+".pdf", format='pdf', bbox_inches='tight')
 
         plt.show()
-
 
     # Histogram plotting function that is intended to compare fake and truth-matched data
     def PlotHistogram(self,data, fake_key, truth_key, bins, x_label, y_label, x_range=None, y_scale='linear', savename='', custom_data_func=None):
@@ -258,18 +230,12 @@ class Plotter():
         plt.ylim(y_min, y_max * 1.4)
         if y_scale=="log": plt.ylim(y_min, y_max * 10)
 
-
         # Custom Muon Collider text
         plt.text(0.04, 0.9, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
         plt.text(0.04, 0.83, self.data_label, transform=plt.gca().transAxes)
         plt.text(0.04, 0.76, self.lattice_label, transform=plt.gca().transAxes)
         com_label = r'$\sqrt{s}$ = ' +r'{}'.format(self.com_tev) +   r' TeV'
         plt.text(0.04, 0.69, com_label, transform=plt.gca().transAxes)
-
-        # plt.text(0.04, 0.9, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
-        # plt.text(0.04, 0.83, "Simulation, with BIB", transform=plt.gca().transAxes)
-        # plt.text(0.04, 0.76, r'Lattice v0.4', transform=plt.gca().transAxes)
-        # plt.text(0.04, 0.69, r'$\sqrt{s}$ = 10 TeV', transform=plt.gca().transAxes)
 
         # Or use mplhep to add the text
         # hep.atlas.text("Muon Collider")
