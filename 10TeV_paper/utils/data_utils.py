@@ -9,6 +9,10 @@ class JsonDataLoader():
     def __init__(self):
         self.filename = None
         self.dictionary = None
+        self.verbose = False
+
+    def SetVerbose(self,val):
+        self.verbose = val
 
     def SetFilename(self,val):
         self.filename = val
@@ -17,6 +21,10 @@ class JsonDataLoader():
         if(self.filename is None):
             return
         self.dictionary = ak.from_json(pathlib.Path(self.filename))
+        if(self.verbose):
+            key = list(self.dictionary.keys())[0]
+            nevents = self.dictioanry[key].shape[0]
+            print('Loaded {} events.'.format(nevents))
 
     def __getitem__(self,key):
         return self.dictionary[key]
@@ -35,6 +43,10 @@ class ROOTDataLoader():
         self.treename = 'ntuple'
         self.file = None
         self.tree = None
+        self.verbose = False
+
+    def SetVerbose(self,val):
+        self.verbose = val
 
     def SetFilename(self,val):
         self.filename = val
@@ -47,6 +59,9 @@ class ROOTDataLoader():
             return
         self.file = ur.open(self.filename)
         self.tree = self.file[self.treename]
+
+        if(self.verbose):
+            print('Loaded {} events.'.format(self.tree.num_entries))
 
     def __getitem__(self,key):
         return self.tree[key].array()
@@ -62,6 +77,7 @@ class DataLoader():
         self.filename = None
         self.reader = None
         self.mode='ROOT'
+        self.verbose=False
 
     def SetFilename(self,val):
         self.filename = val
@@ -72,9 +88,13 @@ class DataLoader():
             self.reader = ROOTDataLoader()
             self.mode = 'ROOT'
         self.reader.SetFilename(self.filename)
+        self.reader.SetVerbose(self.verbose)
 
     def GetMode(self):
         return self.mode
+
+    def SetVerbose(self,val):
+        self.verbose = val
 
     def Load(self):
         if(self.mode=='JSON'):

@@ -110,21 +110,32 @@ class Plotter():
 
         plt.show()
 
-    def plot_efficiencies(self,results, min_value, max_value, xlabel=None, labels="", misctext='', bottom_label=None, savename='',xlim=None,ylim=None, label_block_x_up=None):
+    def plot_efficiencies(self,results, min_value, max_value, xlabel=None, labels="", misctext='', bottom_label=None, savename='',xlim=None,ylim=None, label_block_y_up=None):
         plt.figure(figsize=(8, 6))
 
         for i, hist in enumerate(results):
-            nbins = hist.GetNbinsX()
-            bin_centers = [hist.GetBinCenter(i+1) for i in range(nbins)]
-            efficiencies = [hist.GetBinContent(i+1) for i in range(nbins)]
-            errors = [hist.GetBinError(i+1) for i in range(nbins)]
-            bin_widths = np.array([hist.GetBinWidth(i+1) for i in range(nbins)])
+            # depending on version of code, might be handling TH1 or TEfficiency
+            if(type(hist) in [rt.TH1, rt.TH1D, rt.TH1F]):
+                nbins = hist.GetNbinsX()
+                bin_centers = [hist.GetBinCenter(i+1) for i in range(nbins)]
+                efficiencies = [hist.GetBinContent(i+1) for i in range(nbins)]
+                errors_up = [hist.GetBinError(i+1)/2. for i in range(nbins)]
+                errors_down = [hist.GetBinError(i+1)/2. for i in range(nbins)]
+                bin_widths = np.array([hist.GetBinWidth(i+1) for i in range(nbins)])
+            else:
+                h_total = hist.GetTotalHistogram()
+                nbins = h_total.GetNbinsX()
+                bin_centers = [h_total.GetBinCenter(i+1) for i in range(nbins)]
+                efficiencies = [hist.GetEfficiency(i+1) for i in range(nbins)]
+                errors_up = [hist.GetEfficiencyErrorUp(i+1) for i in range(nbins)]
+                errors_down = [hist.GetEfficiencyErrorLow(i+1) for i in range(nbins)]
+                bin_widths = np.array([h_total.GetBinWidth(i+1) for i in range(nbins)])
 
             label = labels[i] if labels else None
             plt.errorbar(
                 bin_centers,
                 efficiencies,
-                yerr=errors,
+                yerr=(errors_down,errors_up),
                 xerr=bin_widths/2.,
                 fmt='o',
                 label=label,
@@ -162,12 +173,12 @@ class Plotter():
         plt.title(self.label_upper_right, fontsize=20, loc = 'right')
 
         # Custom Muon Collider text
-        if(label_block_x_up is None):
-            label_block_x_up = 0.92
-        plt.text(0.04, label_block_x_up, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
-        plt.text(0.04, label_block_x_up-0.075, self.data_label, transform=plt.gca().transAxes)
+        if(label_block_y_up is None):
+            label_block_y_up = 0.92
+        plt.text(0.04, label_block_y_up, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
+        plt.text(0.04, label_block_y_up-0.075, self.data_label, transform=plt.gca().transAxes)
         combined_label = self.lattice_label + r', ' + r'$\sqrt{s}$ = ' +r'{}'.format(self.com_tev) +   r' TeV'
-        plt.text(0.04, label_block_x_up-0.15 , combined_label, transform=plt.gca().transAxes)
+        plt.text(0.04, label_block_y_up-0.15 , combined_label, transform=plt.gca().transAxes)
 
         # bottom label
         if(bottom_label is not None):

@@ -237,24 +237,27 @@ def calculate_efficiencies(track_data, truth_data, mask_pairs, num_bins=10, min_
             if(denominator.GetBinContent(i+1) == 0):
                 denominator.SetBinContent(i+1,1)
 
-        efficiency = rt.TH1D(numerator)
-        efficiency.Divide(denominator)
+        efficiency = rt.TEfficiency(numerator,denominator)
+        efficiency.SetStatisticOption(rt.TEfficiency.kFNormal) # TODO: Is this right? There are a number of options, frequentist & Bayesian -Jan
 
-        # NOTE: ROOT might be able to do some of this automatically? Will do by hand, to be safe.
-        for i in range(efficiency.GetNbinsX()):
-            num = numerator.GetBinContent(i+1)
-            num_e = numerator.GetBinError(i+1)
-            denom = denominator.GetBinContent(i+1)
-            denom_e = denominator.GetBinError(i+1)
-            eff = efficiency.GetBinContent(i+1)
+        # efficiency = rt.TH1D(numerator)
+        # efficiency.Divide(denominator)
 
-            uncert = 0.
-            if(num != 0. and denom != 0.):
-                uncert = eff * np.sqrt( np.square(num_e / num) + np.square(denom_e / denom) )
-                print('a = {:.2e} +/- {:.2e}'.format(num,num_e))
-                print('b = {:.2e} +/- {:.2e}'.format(denom,denom_e))
-                print('\t-> uncertainty = {:.2e}'.format(uncert))
-            efficiency.SetBinError(i+1,uncert)
+        # # NOTE: ROOT might be able to do some of this automatically? Will do by hand, to be safe.
+        # for i in range(efficiency.GetNbinsX()):
+        #     num = numerator.GetBinContent(i+1)
+        #     num_e = numerator.GetBinError(i+1)
+        #     denom = denominator.GetBinContent(i+1)
+        #     denom_e = denominator.GetBinError(i+1)
+        #     eff = efficiency.GetBinContent(i+1)
+
+        #     uncert = 0.
+        #     if(num != 0. and denom != 0.):
+        #         uncert = eff * np.sqrt( np.square(num_e / num) + np.square(denom_e / denom) )
+        #         print('a = {:.2e} +/- {:.2e}'.format(num,num_e))
+        #         print('b = {:.2e} +/- {:.2e}'.format(denom,denom_e))
+        #         print('\t-> uncertainty = {:.2e}'.format(uncert))
+        #     efficiency.SetBinError(i+1,uncert)
 
         # package things in a list, since this is how old code did it
         results.append(efficiency)

@@ -171,6 +171,7 @@ def main(args):
     # Load the data. For ROOT files, uproot will handle things so that memory usage is reasonable.
     data_loader = {key:DataLoader() for key in infiles.keys()}
     for key,loader in data_loader.items():
+        loader.SetVerbose(True)
         loader.SetFilename(infiles[key])
         print('Loading data from {}.'.format(infiles[key]))
         loader.Load()
@@ -284,7 +285,7 @@ def main(args):
                     xlim=xlim,
                     ylim=(0.8,1.02),
                     bottom_label=bottom_label,
-                    label_block_x_up=0.6
+                    label_block_y_up=0.8
                     )
     return
 
