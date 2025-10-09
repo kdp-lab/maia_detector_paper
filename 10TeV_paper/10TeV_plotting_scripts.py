@@ -20,6 +20,9 @@ from utils.calc_utils import calculate_efficiencies,combine_masks, process_data
 # Function to fold the data over theta = 90 because detector is symmetric in theta.
 # To be used in the case of low statistics (high pT and BIB data)
 def fold_data(data, LC_theta_match, LC_pt_match):
+    # TODO: I suspect this function is broken or needs adjustment. Why is LC_pt_match being used internally?
+    #       In practice, hasn't the input "data" *already* had the mask applied? Then applying it again will break things.
+    #       Also question the use of ak.flatten()... - Jan
     # Filter out data points less than 90
     # if bib == False:
     right_side_data = (data[(ak.flatten((LC_theta_match)[(LC_pt_match)>1000])) > 90])
@@ -171,11 +174,11 @@ def main(args):
     plotter.SetLatticeLabel(lattice_label)
     plotter.SetOutputDirectory(outdir)
 
-    plotter.PlotHistogram(data_loader, key_mapping[data_loader.GetMode()]['fake_pt'], key_mapping[data_loader.GetMode()]['mcp_mu_pt'], np.linspace(0, 1000, 100), 'Track $p_T$ [GeV]', 'Normalized Count', x_range=(0, 1000), y_scale='log')
-    plotter.PlotHistogram(data_loader, key_mapping[data_loader.GetMode()]['fake_eta'], key_mapping[data_loader.GetMode()]['mcp_mu_eta'], np.linspace(-3,3,30), r'Track $\eta$', 'Normalized Count', y_scale='linear')
-    plotter.PlotHistogram(data_loader, key_mapping[data_loader.GetMode()]['fake_chi2'], key_mapping[data_loader.GetMode()]['LC_chi2'], np.linspace(0,3,30), r'Track $\chi^2/n_{dof}$', 'Normalized Count', x_range=(0, 3), y_scale='linear', custom_data_func=lambda d: (ak.flatten(d[key_mapping[data_loader.GetMode()]['fake_chi2']]) / ak.flatten(d[key_mapping[data_loader.GetMode()]['fake_ndf']]), ak.flatten(d[key_mapping[data_loader.GetMode()]['LC_chi2']]) / ak.flatten(d[key_mapping[data_loader.GetMode()]['LC_ndf']])))
-    plotter.PlotHistogram(data_loader, key_mapping[data_loader.GetMode()]['fake_d0'], key_mapping[data_loader.GetMode()]['LC_d0'], np.linspace(-6,6,50), r'Track $d_0$ [mm]', 'Normalized Count', x_range=(-6,6), y_scale='log')
-    plotter.PlotHistogram(data_loader, key_mapping[data_loader.GetMode()]['fake_nhits'], key_mapping[data_loader.GetMode()]['LC_nhits'], np.arange(-0.5, 26, 1), r'Track $n_{hits}$', 'Normalized Count', y_scale='linear', custom_data_func=lambda d: (ak.flatten(d[key_mapping[data_loader.GetMode()]['fake_nhits']]), ak.flatten(d[key_mapping[data_loader.GetMode()]['LC_nhits']])))
+    plotter.plot_fake_and_true_distributions(data_loader, key_mapping[data_loader.GetMode()]['fake_pt'], key_mapping[data_loader.GetMode()]['mcp_mu_pt'], np.linspace(0, 1000, 100), 'Track $p_T$ [GeV]', 'Normalized Count', x_range=(0, 1000), y_scale='log')
+    plotter.plot_fake_and_true_distributions(data_loader, key_mapping[data_loader.GetMode()]['fake_eta'], key_mapping[data_loader.GetMode()]['mcp_mu_eta'], np.linspace(-3,3,30), r'Track $\eta$', 'Normalized Count', y_scale='linear')
+    plotter.plot_fake_and_true_distributions(data_loader, key_mapping[data_loader.GetMode()]['fake_chi2'], key_mapping[data_loader.GetMode()]['LC_chi2'], np.linspace(0,3,30), r'Track $\chi^2/n_{dof}$', 'Normalized Count', x_range=(0, 3), y_scale='linear', custom_data_func=lambda d: (ak.flatten(d[key_mapping[data_loader.GetMode()]['fake_chi2']]) / ak.flatten(d[key_mapping[data_loader.GetMode()]['fake_ndf']]), ak.flatten(d[key_mapping[data_loader.GetMode()]['LC_chi2']]) / ak.flatten(d[key_mapping[data_loader.GetMode()]['LC_ndf']])))
+    plotter.plot_fake_and_true_distributions(data_loader, key_mapping[data_loader.GetMode()]['fake_d0'], key_mapping[data_loader.GetMode()]['LC_d0'], np.linspace(-6,6,50), r'Track $d_0$ [mm]', 'Normalized Count', x_range=(-6,6), y_scale='log')
+    plotter.plot_fake_and_true_distributions(data_loader, key_mapping[data_loader.GetMode()]['fake_nhits'], key_mapping[data_loader.GetMode()]['LC_nhits'], np.arange(-0.5, 26, 1), r'Track $n_{hits}$', 'Normalized Count', y_scale='linear', custom_data_func=lambda d: (ak.flatten(d[key_mapping[data_loader.GetMode()]['fake_nhits']]), ak.flatten(d[key_mapping[data_loader.GetMode()]['LC_nhits']])))
     # PlotHistogram(data, 'fake_phi', 'mcp_mu_phi', (100), r'Track $\phi$', 'Normalized Count', x_range=(-np.pi, np.pi), y_scale='linear')
 
     # Assign variables
@@ -479,7 +482,12 @@ def main(args):
         numbins=numpoints,
         bins=pt_2_bins,
         theta=True,
-        degrees=degrees
+        degrees=degrees,
+        debug=True,
+        debug_directory=outdir + '/debug',
+        debug_name='debug_pt2_v_theta',
+        debug_xlabel='#theta',
+        debug_labels=labels
     )
     xlabel=r'Truth muon $\theta [rad]$'
     xlim=(0.5,np.pi-0.5)

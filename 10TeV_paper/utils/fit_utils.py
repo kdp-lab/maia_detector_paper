@@ -16,8 +16,15 @@ def gaussian(x,p):
 def double_gaussian(x, a1, mu1, sigma1, a2, mu2, sigma2):
     return gaussian(a1,mu1,sigma1) + gaussian(a2,mu2,sigma2)
 
+def two_sided_gaussian(x,p):
+    if(x[0] >= p[1]):
+        sigma = p[2] * (1. + p[3])
+    else:
+        sigma = p[2] * (1. - p[3])
+    return p[0] * np.exp(-0.5 * np.square((x[0] - p[1]) / sigma))
+
 # Function for fitting a Gaussian to the data
-def fit_gaussian(slice_data, bins, mean = 0, rms = None, mean_bounds=(-0.001,0.001)):
+def fit_gaussian(slice_data, bins, mean = 0, rms = None, mean_bounds=(-0.001,0.001),debug=False):
     """
     Fit a Gaussian to the input data slice.
 
@@ -61,6 +68,10 @@ def fit_gaussian(slice_data, bins, mean = 0, rms = None, mean_bounds=(-0.001,0.0
     fit_result = h.Fit(fname,'RQSI')
     parameters = np.array([f.GetParameter(x) for x in range(3)])
     uncerts    = np.array([f.GetParError(x) for x in range(3)])
+
+    # print fit result pointer here, causes segmentation violation outside (something necessary deleted?)
+    if(debug): fit_result.Print()
+
     return {
         'fit_result_pointer':fit_result,
         'initial_parameters':initial_parameters,
@@ -70,10 +81,117 @@ def fit_gaussian(slice_data, bins, mean = 0, rms = None, mean_bounds=(-0.001,0.0
         'histogram':h
     }
 
-    counts, bin_edges = np.histogram(slice_data, bins=bins)
-    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-    popt, pcov = curve_fit(gaussian, bin_centers, counts, p0=[max(counts), mean, rms])
-    return popt, pcov, bin_centers
+# Function for fitting a Gaussian to the data -- first step fits with fixed mean, then releases for final fit
+def fit_gaussian_two_step(slice_data, bins, mean = 0, rms = None,debug=False):
+
+    if bins is None:
+        bins = np.linspace(np.min(slice_data), np.max(slice_data), int(np.sqrt(len(slice_data))))
+
+    h = rt.TH1D(RN(),'',len(bins)-1,bins)
+    for entry in slice_data:
+        h.Fill(entry)
+
+    if mean is None:
+        mean = h.GetMean() #np.mean(slice_data)
+    if rms is None:
+        rms = h.GetRMS() # NOTE: This is the standard deviation, see ROOT docs! | np.std(slice_data) # np.sqrt(np.mean(np.square(slice_data - mean))) # - mean
+
+    # f = rt.TF1('f_{}'.format(RN()),lambda x, p: gaussian(x,p[0],p[1],p[2]),bins[0],bins[-1],3)
+    f = rt.TF1('f_{}'.format(RN()),gaussian,bins[0],bins[-1],3)
+    fname = f.GetName()
+    f.SetParameter(0, 0.9 * h.GetMaximum())
+    # print('Set par0 to {:.2f}'.format(f.GetParameter(0)))
+    f.FixParameter(1,mean)
+    f.SetParameter(2,0.5 * rms)
+
+    f.SetParLimits(0,0.5 * h.GetMaximum(),1.5 * h.GetMaximum())
+    # f.SetParLimits(1,*mean_bounds)
+    f.SetParLimits(2,0.05 * rms,3. * rms)
+    # f = rt.TF1(RN(),'gaus',bins[0],bins[-1])
+
+    initial_parameters = np.array([f.GetParameter(x) for x in range(3)])
+
+    fit_result = h.Fit(fname,'RQSI')
+
+    initial_parameters_2 = np.array([f.GetParameter(x) for x in range(3)])
+
+    f.ReleaseParameter(0)
+    f.ReleaseParameter(1)
+    f.ReleaseParameter(2)
+
+    fit_option = 'RSI'
+    if(not debug): fit_option += 'Q'
+
+    fit_result = h.Fit(fname,fit_option)
+
+    parameters = np.array([f.GetParameter(x) for x in range(3)])
+    uncerts    = np.array([f.GetParError(x) for x in range(3)])
+
+    return {
+        'fit_result_pointer':fit_result,
+        'initial_parameters':[initial_parameters,initial_parameters_2],
+        'parameters':parameters,
+        'uncertainties':uncerts,
+        'bins':bins,
+        'histogram':h
+    }
+
+# Function for fitting a two-sided Gaussian to the data.
+def fit_gaussian_two_sided(slice_data, bins, mean = 0, rms = None,debug=False):
+
+    if bins is None:
+        bins = np.linspace(np.min(slice_data), np.max(slice_data), int(np.sqrt(len(slice_data))))
+
+    h = rt.TH1D(RN(),'',len(bins)-1,bins)
+    for entry in slice_data:
+        h.Fill(entry)
+
+    if mean is None:
+        mean = h.GetMean() #np.mean(slice_data)
+    if rms is None:
+        rms = h.GetRMS() # NOTE: This is the standard deviation, see ROOT docs! | np.std(slice_data) # np.sqrt(np.mean(np.square(slice_data - mean))) # - mean
+
+    # f = rt.TF1('f_{}'.format(RN()),lambda x, p: gaussian(x,p[0],p[1],p[2]),bins[0],bins[-1],3)
+    f = rt.TF1('f_{}'.format(RN()),two_sided_gaussian,bins[0],bins[-1],4)
+    fname = f.GetName()
+    f.SetParameter(0, 0.9 * h.GetMaximum())
+    # print('Set par0 to {:.2f}'.format(f.GetParameter(0)))
+    f.FixParameter(1,mean)
+    f.SetParameter(2,0.5 * rms)
+    f.SetParameter(4,0)
+
+    f.SetParLimits(0,0.5 * h.GetMaximum(),1.5 * h.GetMaximum())
+    # f.SetParLimits(1,*mean_bounds)
+    f.SetParLimits(2,0.05 * rms,3. * rms)
+    f.SetParLimits(3,0,0.9)
+    # f = rt.TF1(RN(),'gaus',bins[0],bins[-1])
+
+    initial_parameters = np.array([f.GetParameter(x) for x in range(3)])
+
+    fit_result = h.Fit(fname,'RQSI')
+
+    initial_parameters_2 = np.array([f.GetParameter(x) for x in range(3)])
+
+    f.ReleaseParameter(0)
+    f.ReleaseParameter(1)
+    f.ReleaseParameter(2)
+
+    fit_option = 'RSI'
+    if(not debug): fit_option += 'Q'
+
+    fit_result = h.Fit(fname,fit_option)
+
+    parameters = np.array([f.GetParameter(x) for x in range(3)])
+    uncerts    = np.array([f.GetParError(x) for x in range(3)])
+
+    return {
+        'fit_result_pointer':fit_result,
+        'initial_parameters':[initial_parameters,initial_parameters_2],
+        'parameters':parameters,
+        'uncertainties':uncerts,
+        'bins':bins,
+        'histogram':h
+    }
 
 def fit_double_gaussian(slice_data, bins=np.linspace(-0.001, 0.001, 300), mean1=0, rms1=0.0001, mean2=0, rms2=0.0005):
     """

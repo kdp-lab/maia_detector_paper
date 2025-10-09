@@ -7,7 +7,6 @@ import numpy as np
 import ROOT as rt
 import awkward as ak
 import sys
-import matplotlib.pyplot as plt
 import mplhep as hep
 import argparse as ap
 import uproot as ur
@@ -15,7 +14,7 @@ import uproot as ur
 
 from utils.data_utils import DataLoader
 from utils.plot_utils import Plotter
-from utils.calc_utils import calculate_efficiencies,combine_masks, process_data
+from utils.calc_utils import calculate_efficiencies,combine_masks
 
 # Function to fold the data over theta = 90 because detector is symmetric in theta.
 # To be used in the case of low statistics (high pT and BIB data)
@@ -275,7 +274,7 @@ def main(args):
     min_value = min_value[list(data_loader.keys())[0]]
     max_value = max_value[list(data_loader.keys())[0]]
 
-    xlabel = r"Muon $\theta [rad]$ "
+    xlabel = r"Muon $\theta$ [rad] "
     if(degrees):
         xlabel = r"Muon $\theta [\degree]$ "
     plotter.plot_efficiencies(result_list, min_value, max_value,
@@ -283,64 +282,121 @@ def main(args):
                     labels=label_list,
                     savename='eff_vs_theta_{}'.format(suffix),
                     xlim=xlim,
-                    ylim=(0.8,1.02),
+                    ylim=(0.95,1.05),
                     bottom_label=bottom_label,
                     label_block_y_up=0.8
                     )
-    return
+
+    # print('Produced efficiency vs. theta plots. Number of events used per histogram is:')
+    # for i in range(len(result_list)):
+    #     print('\t{} : {}'.format(label_list[i],result_list[i].GetTotalHistogram().GetEntries()))
+
 
     # Binned in pT, split into barrel and endcap regions
     print('Computing reconstruction efficiency as a function of pT, for barrel region.')
     # custom_bins = [1,2,5,10,20,50,100,200,500,1000,2000,5000]
     custom_bins = [1,2,5,10,20,50,100,200,500,1000]
 
-    mask_pairs=[
-        (truth_barrel,truth_barrel), # for muons in the barrel region
-        (combine_masks([track_clean,truth_barrel]),truth_barrel), # for muons in the barrel region, with track cleaning applied to tracks
-        ]
-    if(efficiency_opts == 1):
-        mask_pairs = [mask_pairs[0]]
-    elif(efficiency_opts == 2):
-        mask_pairs = [mask_pairs[1]]
+    mask_pairs = {key:[
+        (truth_barrel[key],truth_barrel[key]), # no cleaning,
+        (combine_masks([track_clean[key],truth_barrel[key]]),truth_barrel[key]) # track cleaning
+    ] for key in data_loader.keys()}
 
-    results, min_value, max_value = calculate_efficiencies(
-        LC_pt_match,
-        mcp_mu_pt,
-        mask_pairs=mask_pairs,
+    if(efficiency_opts == 1):
+        mask_pairs = {key:[mask_pairs[key][0]] for key in mask_pairs.keys()}
+        labels = {key:[labels[key][0].split(':')[0]] for key in labels.keys()} # if before cleaning, don't write anything
+    elif(efficiency_opts == 2):
+        mask_pairs = {key:[mask_pairs[key][1]] for key in mask_pairs.keys()}
+        labels = {key:[labels[key][1].split(':')[0]] for key in labels.keys()} # if after cleaning, don't write anything
+        bottom_label += ['After cleaning']
+
+    result_dict = {key:calculate_efficiencies(
+        LC_pt_match[key],
+        mcp_mu_pt[key],
+        mask_pairs=mask_pairs[key],
         custom_bins=custom_bins
-    )
+    ) for key in data_loader.keys()}
+
+    results   = {key:result_dict[key][0] for key in result_dict.keys()}
+    min_value = {key:result_dict[key][1] for key in result_dict.keys()}
+    max_value = {key:result_dict[key][2] for key in result_dict.keys()}
+
+    # turn things into lists for plot_efficiencies()
+    result_list = []
+    label_list = []
+    for key in data_loader.keys():
+        result_list += results[key]
+        label_list += labels[key]
+    min_value = min_value[list(data_loader.keys())[0]]
+    max_value = max_value[list(data_loader.keys())[0]]
 
     misctext = r'$|\eta|<1$'
     if(degrees):
         misctext = r'$40^{\circ}<\theta<140^{\circ}$'
+    xlabel = "Muon $p_T$ [GeV]"
 
-    plotter.plot_efficiencies(results, min_value, max_value,
-                    xlabel="Muon $p_T$ [GeV]",
-                    labels=labels,
-                    misctext=misctext,
+    plotter.plot_efficiencies(result_list, min_value, max_value,
+                    xlabel=xlabel,
+                    labels=label_list,
                     savename='eff_vs_pt_barrel_{}'.format(suffix),
-                    bottom_label=bottom_label
+                    ylim=(0.95,1.05),
+                    bottom_label=bottom_label,
+                    misctext=misctext
+                    # label_block_y_up=0.8
                     )
 
     print('Computing reconstruction efficiency as a function of pT, for endcap region.')
 
-    results, min_value, max_value = calculate_efficiencies(
-        LC_pt_match,
-        mcp_mu_pt,
-        mask_pairs=mask_pairs,
+    mask_pairs = {key:[
+        (truth_endcap[key],truth_endcap[key]), # no cleaning,
+        (combine_masks([track_clean[key],truth_endcap[key]]),truth_endcap[key]) # track cleaning
+    ] for key in data_loader.keys()}
+
+    if(efficiency_opts == 1):
+        mask_pairs = {key:[mask_pairs[key][0]] for key in mask_pairs.keys()}
+        labels = {key:[labels[key][0].split(':')[0]] for key in labels.keys()} # if before cleaning, don't write anything
+    elif(efficiency_opts == 2):
+        mask_pairs = {key:[mask_pairs[key][1]] for key in mask_pairs.keys()}
+        labels = {key:[labels[key][1].split(':')[0]] for key in labels.keys()} # if after cleaning, don't write anything
+        bottom_label += ['After cleaning']
+
+    result_dict = {key:calculate_efficiencies(
+        LC_pt_match[key],
+        mcp_mu_pt[key],
+        mask_pairs=mask_pairs[key],
         custom_bins=custom_bins
-    )
+    ) for key in data_loader.keys()}
+
+    results   = {key:result_dict[key][0] for key in result_dict.keys()}
+    min_value = {key:result_dict[key][1] for key in result_dict.keys()}
+    max_value = {key:result_dict[key][2] for key in result_dict.keys()}
+
+    # turn things into lists for plot_efficiencies()
+    result_list = []
+    label_list = []
+    for key in data_loader.keys():
+        result_list += results[key]
+        label_list += labels[key]
+    min_value = min_value[list(data_loader.keys())[0]]
+    max_value = max_value[list(data_loader.keys())[0]]
 
     misctext = r'$|\eta|>1$'
     if(degrees):
         misctext = r'$\theta<40^{\circ}$ or $\theta>140^{\circ}$'
-    plotter.plot_efficiencies(results, min_value, max_value,
-                    xlabel="Muon $p_T$ [GeV]",
-                    labels=labels,
-                    misctext=misctext,
+    xlabel = "Muon $p_T$ [GeV]"
+
+    plotter.plot_efficiencies(result_list, min_value, max_value,
+                    xlabel=xlabel,
+                    labels=label_list,
                     savename='eff_vs_pt_endcap_{}'.format(suffix),
-                    bottom_label=bottom_label
+                    ylim=(0.95,1.05),
+                    bottom_label=bottom_label,
+                    misctext=misctext
+                    # label_block_y_up=0.8
                     )
+
+    return
+
 
 if(__name__=='__main__'):
     main(sys.argv)

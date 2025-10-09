@@ -30,7 +30,7 @@ class Plotter():
         if(self.outdir is not None):
             os.makedirs(self.outdir,exist_ok=True)
 
-    def plot_processed_data(self,processed_results, labels=None, xlabel='', ylabel='', title='', misctext=None, fontsize=20, log=False, xlog=False, ylim=None, xlim=None, savename=''):
+    def plot_processed_data(self,processed_results, labels=None, xlabel='', ylabel='', title='', misctext=None, fontsize=20, log=False, xlog=False, ylim=None, xlim=None, legend_loc=(0.4,0.71), label_block_y_up=0.92, misctext_y_up=0.71, savename=''):
         """
         Plot the processed RMS data.
 
@@ -77,18 +77,18 @@ class Plotter():
         else:
             ax.set_title(self.label_upper_right, fontsize=fontsize, loc = 'right')
 
-        plt.text(0.04, 0.92, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
-        plt.text(0.04, 0.85, self.data_label, transform=plt.gca().transAxes)
+        plt.text(0.04, label_block_y_up, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
+        plt.text(0.04, label_block_y_up-0.075, self.data_label, transform=plt.gca().transAxes)
         com_label = r'$\sqrt{s}$ = ' +r'{}'.format(self.com_tev) +   r' TeV'
         combined_label = '{}, {}'.format(self.lattice_label,com_label)
-        plt.text(0.04, 0.78, combined_label, transform=plt.gca().transAxes)
+        plt.text(0.04, label_block_y_up-0.15, combined_label, transform=plt.gca().transAxes)
         # plt.text(0.04, 0.71, com_label, transform=plt.gca().transAxes)
 
         if(misctext is not None):
             if(type(misctext) != list):
                 misctext = [misctext]
             for i,line in enumerate(misctext):
-                plt.text(0.04, 0.71 - 0.07 * (i+1), line, fontsize=fontsize-3, transform=plt.gca().transAxes)
+                plt.text(0.04, misctext_y_up - 0.075 * (i+1), line, fontsize=fontsize-3, transform=plt.gca().transAxes)
 
         # handle axes
         ax.set_xlabel(xlabel, loc='right', fontsize=fontsize+5)
@@ -97,8 +97,8 @@ class Plotter():
         if xlog: ax.set_xscale('log')
         if ylim is not None: ax.set_ylim(ylim)
         if xlim is not None: ax.set_xlim(xlim)
-        if labels:
-            ax.legend(fontsize=fontsize-3,loc=(0.5,0.71))
+        if(labels):
+            ax.legend(fontsize=fontsize-3,loc=legend_loc)
         ax.tick_params(labelsize=fontsize)
         #ax.yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
         #ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
@@ -204,7 +204,7 @@ class Plotter():
         plt.show()
 
     # Histogram plotting function that is intended to compare fake and truth-matched data
-    def PlotHistogram(self,data, fake_key, truth_key, bins, x_label, y_label, x_range=None, y_scale='linear', savename='', custom_data_func=None):
+    def plot_fake_and_true_distributions(self,data, fake_key, truth_key, bins, x_label, y_label, x_range=None, y_scale='linear', savename='', custom_data_func=None):
 
         # Set up plotting parameters
         plt.style.use('seaborn-v0_8-colorblind')
@@ -240,7 +240,7 @@ class Plotter():
         plt.yscale(y_scale)
         plt.title(r'$\it{MAIA}$ Detector Concept', fontsize=fontsize, loc='right')
 
-        # Get current y-axis limits and add 10% padding to the top
+        # Get current y-axis limits and add 10% padding to the top # TODO: This adds 40% for linear, no? Seems fine. -Jan
         y_min, y_max = plt.gca().get_ylim()
         plt.ylim(y_min, y_max * 1.4)
         if y_scale=="log": plt.ylim(y_min, y_max * 10)
@@ -264,6 +264,60 @@ class Plotter():
 
         if(savename == ''):
             savename="{}_dist".format(dist)
+
+        if len(savename)>0:
+            if(self.outdir is not None):
+                savename = '{}/{}'.format(self.outdir,savename)
+            plt.savefig(savename+".pdf", format='pdf', bbox_inches='tight')
+
+        plt.show()
+
+    def plot_distributions(self,data, labels, bins, x_label, y_label, x_range=None, y_scale='linear', savename=''):
+
+        # Set up plotting parameters
+        plt.style.use('seaborn-v0_8-colorblind')
+        fontsize = 20
+        plt.rcParams['font.size'] = fontsize
+
+        plt.figure(figsize=(8, 6))
+
+        # Bins input can either be a single itn or can be used as a np.linspace array
+        if isinstance(bins, int):
+            bins = (bins, bins)
+        elif isinstance(bins, np.ndarray):
+            bins = (bins, bins)
+
+        # Create the histograms
+        for i,array in enumerate(data):
+            plt.hist(ak.flatten(array), bins=bins[0], linewidth=1.5, histtype='step', label=labels[i])
+
+        if x_range:
+            plt.xlim(x_range)
+
+        plt.xlabel(x_label, loc='right')
+        plt.ylabel(y_label, loc='top')
+        plt.yscale(y_scale)
+        plt.title(r'$\it{MAIA}$ Detector Concept', fontsize=fontsize, loc='right')
+
+        # Get current y-axis limits and add 10% padding to the top # TODO: This adds 40% for linear, no? Seems fine. -Jan
+        y_min, y_max = plt.gca().get_ylim()
+        plt.ylim(y_min, y_max * 1.4)
+        if y_scale=="log": plt.ylim(y_min, y_max * 10)
+
+        # Custom Muon Collider text
+        plt.text(0.04, 0.9, "Muon Collider", fontweight='bold', style='italic', transform=plt.gca().transAxes)
+        plt.text(0.04, 0.83, self.data_label, transform=plt.gca().transAxes)
+        plt.text(0.04, 0.76, self.lattice_label, transform=plt.gca().transAxes)
+        com_label = r'$\sqrt{s}$ = ' +r'{}'.format(self.com_tev) +   r' TeV'
+        plt.text(0.04, 0.69, com_label, transform=plt.gca().transAxes)
+
+        # Or use mplhep to add the text
+        # hep.atlas.text("Muon Collider")
+
+        plt.legend(frameon=False, loc = 'upper right', fontsize=20)
+        plt.xticks(fontsize=20)
+        plt.yticks(fontsize=20)
+        plt.tight_layout()
 
         if len(savename)>0:
             if(self.outdir is not None):

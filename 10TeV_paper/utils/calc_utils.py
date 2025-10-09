@@ -3,7 +3,7 @@ import numpy as np
 import awkward as ak
 import ROOT as rt
 
-from utils.fit_utils import fit_gaussian, fit_double_gaussian, double_gaussian_mean_rms, gaussian, double_gaussian
+from utils.fit_utils import fit_gaussian, fit_gaussian_two_step, fit_gaussian_two_sided, gaussian, two_sided_gaussian
 
 def RN():
     return str(uuid.uuid4())
@@ -28,7 +28,7 @@ def combine_masks(mask_list):
             combined_mask[j] *= mask[j,0]
     return combined_mask
 
-def process_data(datax, datay, numbins, bins=None,theta=False,degrees=False,debug=False,debug_name=None, debug_directory=None, debug_labels=None, debug_xlabel=None):
+def process_data(datax, datay, numbins, x_bins=None, bins=None,theta=False,degrees=False,debug=False,debug_name=None, debug_directory=None, debug_labels=None, debug_xlabel=None):
     """
     Process data to calculate RMS values binned by the provided data.
 
@@ -50,6 +50,9 @@ def process_data(datax, datay, numbins, bins=None,theta=False,degrees=False,debu
     if(debug and debug_directory is None):
         debug_directory = os.getcwd()
 
+    if(debug_directory is not None):
+        os.makedirs(debug_directory,exist_ok=True)
+
     processed_results = []
 
     if isinstance(bins, np.ndarray):
@@ -63,25 +66,27 @@ def process_data(datax, datay, numbins, bins=None,theta=False,degrees=False,debu
         # TODO: Deal properly with edge case of len(data_flatx) == 0
         if(len(data_flatx) == 0): continue
 
-        x_bins = np.linspace(np.min(data_flatx), np.max(data_flatx), numbins + 1,dtype=float)
-        if(theta):
-            if(degrees):
-                x_bins = np.linspace(15,165, numbins + 1)
-            else:
-                x_bins = np.array([30.*np.pi/180.,
-                    40.*np.pi/180.,
-                    50.*np.pi/180.,
-                    60.*np.pi/180.,
-                    70.*np.pi/180.,
-                    90.*np.pi/180.,
-                    110.*np.pi/180.,
-                    120.*np.pi/180.,
-                    130.*np.pi/180.,
-                    140.*np.pi/180.,
-                    150.*np.pi/180.
-                    ]
-                )
-                numbins = len(x_bins) - 1
+        if(x_bins is None):
+
+            x_bins = np.linspace(np.min(data_flatx), np.max(data_flatx), numbins + 1,dtype=float)
+            if(theta):
+                if(degrees):
+                    x_bins = np.linspace(15,165, numbins + 1)
+                else:
+                    x_bins = np.array([30.*np.pi/180.,
+                        40.*np.pi/180.,
+                        50.*np.pi/180.,
+                        60.*np.pi/180.,
+                        70.*np.pi/180.,
+                        90.*np.pi/180.,
+                        110.*np.pi/180.,
+                        120.*np.pi/180.,
+                        130.*np.pi/180.,
+                        140.*np.pi/180.,
+                        150.*np.pi/180.
+                        ]
+                    )
+        numbins = len(x_bins) - 1
 
         hist = rt.TH1D(RN(),'',numbins,x_bins)
 
@@ -92,83 +97,120 @@ def process_data(datax, datay, numbins, bins=None,theta=False,degrees=False,debu
 
             # Slice the data based on the theta bins
             slice_data = data_flaty[(data_flatx >= x_bins[k]) & (data_flatx < x_bins[k + 1])]
-            flag = 0
-            try:
-                # Fit a Gaussian to the data.
-                # popt, pcov, _ = fit_gaussian(slice_data, bins=bins[j])
-                # fitted_rms = popt[2]
-                # sem = (np.sqrt(np.diag(pcov)))[2]
 
-                fit_results = fit_gaussian(slice_data, bins=bins[j], mean=0,mean_bounds=(-0.0002,0.0002))
-                assert fit_results['fit_result_pointer'].Status() == 0 # NOTE: If this breaks, we fall back on mean/rms directly from distribution
-                popt = fit_results['parameters']
-                uncerts = fit_results['uncertainties']
-                fitted_rms = popt[2]
-                sem = uncerts[2]
+            # try:
+
+            # Gaussian fit
+            fit_results = fit_gaussian_two_step(slice_data, bins=bins[j], mean=0,debug=debug)
+            assert fit_results['fit_result_pointer'].Status() == 0 # NOTE: If this breaks, we fall back on mean/rms directly from distribution
+            popt = fit_results['parameters']
+            uncerts = fit_results['uncertainties']
+            fitted_rms = popt[2]
+            sem = uncerts[2]
+
+            # Two-sided Gaussian fit
+            fit_results2 = fit_gaussian_two_sided(slice_data, bins=bins[j], mean=0,debug=debug)
+            assert fit_results2['fit_result_pointer'].Status() == 0 # NOTE: If this breaks, we fall back on mean/rms directly from distribution
+            popt2 = fit_results['parameters']
+            uncerts2 = fit_results['uncertainties']
+            fitted_rms2 = popt[2]
+            sem2 = uncerts[2]
+
+            use_two_sided = False
+
+            # decide which fit to use, based on which has better reduced chi2
+            chi2_2 = fit_results2['fit_result_pointer'].Chi2()/fit_results2['fit_result_pointer'].Ndf()
+            chi2 = fit_results['fit_result_pointer'].Chi2()/fit_results['fit_result_pointer'].Ndf()
+            if(chi2_2 < chi2):
+                fit_results = fit_results2
+                popt = popt2
+                uncerts = uncerts2
+                fitted_rms = fitted_rms2
+                sem = sem2
+                use_two_sided = True
                 if(debug):
-                    # print('\tNumber of data points: {}'.format(len(slice_data)))
-                    c = rt.TCanvas('c_{}'.format(RN()),'',800,600)
+                    print('\t\tUsing two-sided Gaussian.')
 
-                    dmin = fit_results['bins'][0]
-                    dmax = fit_results['bins'][-1]
+            if(debug):
 
-                    title = 'j = {}, k = {}'.format(j,k)
-                    if(debug_labels is not None):
-                        title = '{} | bin {}: {} #in [{:.1f},{:.1f}]'.format(debug_labels[j],k,debug_xlabel,x_bins[k], x_bins[k+1])
+                # print('\tNumber of data points: {}'.format(len(slice_data)))
+                c = rt.TCanvas('c_{}'.format(RN()),'',800,600)
 
-                    h = rt.TH1D(RN(),title,len(fit_results['bins'])-1,fit_results['bins'])
-                    for entry in slice_data:
-                        h.Fill(entry)
-                        c.cd()
-                    h.Draw('HIST')
+                dmin = fit_results['bins'][0]
+                dmax = fit_results['bins'][-1]
 
+                title = 'j = {}, k = {}'.format(j,k)
+                if(debug_labels is not None):
+                    debug_label = debug_labels[j].replace('$','')
+                    title = '{} | bin {}: {} #in [{:.1f},{:.1f}]'.format(debug_label,k,debug_xlabel,x_bins[k], x_bins[k+1])
+
+                h = rt.TH1D(RN(),title,len(fit_results['bins'])-1,fit_results['bins'])
+                for entry in slice_data:
+                    h.Fill(entry)
+                    c.cd()
+                h.Draw('HIST')
+
+                if(use_two_sided):
+                    f = rt.TF1('f_{}'.format(RN()),two_sided_gaussian,dmin,dmax,4)
+                    for l in range(4):
+                        f.SetParameter(l,popt[l])
+                else:
                     f = rt.TF1('f_{}'.format(RN()),gaussian,dmin,dmax,3)
                     for l in range(3):
                         f.SetParameter(l,popt[l])
-                    f.Draw('SAME')
-                    f.SetLineColor(rt.kRed)
-                    c.cd()
-                    f.Draw('SAME')
-                    f.SetNpx(500)
+                f.Draw('SAME')
+                f.SetLineColor(rt.kRed)
+                c.cd()
+                f.Draw('SAME')
+                f.SetNpx(500)
 
-                    f2 = rt.TF1('f_{}'.format(RN()),gaussian,dmin,dmax,3)
+                if(use_two_sided):
+                    f2 = rt.TF1('f2_{}'.format(RN()),two_sided_gaussian,dmin,dmax,4)
+                    for l in range(4):
+                        f2.SetParameter(l,fit_results['initial_parameters'][0][l]) # NOTE: indexing for fit_gaussian_two_step
+                else:
+                    f2 = rt.TF1('f2_{}'.format(RN()),gaussian,dmin,dmax,3)
                     for l in range(3):
-                        f2.SetParameter(l,fit_results['initial_parameters'][l])
-                    f2.Draw('SAME')
-                    f2.SetLineColor(rt.kCyan)
-                    f2.SetLineStyle(rt.kDotted)
-                    c.cd()
-                    f2.Draw('SAME')
-                    f2.SetNpx(500)
+                        f2.SetParameter(l,fit_results['initial_parameters'][0][l]) # NOTE: indexing for fit_gaussian_two_step
+                f2.Draw('SAME')
+                f2.SetLineColor(rt.kCyan)
+                f2.SetLineStyle(rt.kDotted)
+                c.cd()
+                f2.Draw('SAME')
+                f2.SetNpx(500)
 
-                    # write fit parameters on plot
-                    pave = rt.TPaveText(0.1,0.65,0.3,0.8,'NDC')
-                    pave.SetTextSize(0.02)
-                    pave.SetBorderSize(0)
-                    pave.SetTextFont(102)
-                    pave.SetFillColorAlpha(rt.kWhite,0.)
-                    pave.AddText('A = {:.1e} #pm {:.1e}'.format(popt[0],uncerts[0]))
-                    pave.AddText('#mu = {:.1e} #pm {:.1e}'.format(popt[1],uncerts[0]))
-                    pave.AddText('#sigma = {:.1e} #pm {:.1e}'.format(popt[2],uncerts[0]))
-                    pave.Draw()
+                # write fit parameters on plot
+                pave = rt.TPaveText(0.1,0.65,0.3,0.8,'NDC')
+                pave.SetTextSize(0.02)
+                pave.SetBorderSize(0)
+                pave.SetTextFont(102)
+                pave.SetFillColorAlpha(rt.kWhite,0.)
+                pave.AddText('A = {:.1e} #pm {:.1e}'.format(popt[0],uncerts[0]))
+                pave.AddText('#mu = {:.1e} #pm {:.1e}'.format(popt[1],uncerts[1]))
+                pave.AddText('#sigma = {:.1e} #pm {:.1e}'.format(popt[2],uncerts[2]))
+                if(use_two_sided):
+                    pave.AddText('#alpha = {:.1e} #pm {:.1e}'.format(popt[3],uncerts[3]))
+                pave.Draw()
 
-                    c.Draw()
-                    c.SaveAs("{}/{}_{}_{}.pdf".format(debug_directory,debug_name,j,k))
+                legend = rt.TLegend(0.6,0.6,0.9,0.8)
+                legend.SetFillColorAlpha(rt.kWhite,0.)
+                legend.SetBorderSize(0)
+                legend.AddEntry(f2,'initialized fit','l')
+                legend.AddEntry(f,'final fit','l')
+                legend.Draw()
 
-            except:
-            #     # try:
-            #     #     popt, pcov, _ = fit_double_gaussian(slice_data, bins=bins[j])
-            #     #     _, fitted_rms, sem = double_gaussian_mean_rms(popt, pcov)
-            #     #     if sem == np.inf:
-            #     #         sem = np.std(slice_data, ddof=1) / np.sqrt(2 * (len(slice_data) - 1))
-            #     #     f = rt.TF1('f_{}'.format(RN()),lambda x, p: double_gaussian(x,p[0],p[1],p[2],p[3],p[4],p[5]),dmin,dmax,npars=3)
-            #     #     for l in range(6):
-            #     #         f.SetParameter(l,popt[l])
-            #     #     f.Draw('C SAME')
-            #     #     f.SetLineColor(rt.kPurple)
-            #     # except:
-                fitted_rms = np.sqrt(np.mean(np.square(slice_data - np.mean(slice_data))))
-                sem = np.std(slice_data, ddof=1) / np.sqrt(2 * (len(slice_data) - 1))
+                c.Draw()
+                c.SaveAs("{}/{}_{}_{}.pdf".format(debug_directory,debug_name,j,k))
+
+            # except:
+            #     if(debug):
+            #         print('Warning: Failed Gaussian fit.')
+            #         print('\t           x_bins = ',x_bins)
+            #         print('\t(resolution) bins: min = {:.2e}, max = {:.2e}, nbins = {}'.format(bins[j][0],bins[j][-1],len(bins[j])-1))
+            #         print('\tlen(slice_data) = ',len(slice_data))
+
+            #     fitted_rms = np.sqrt(np.mean(np.square(slice_data - np.mean(slice_data))))
+            #     sem = np.std(slice_data, ddof=1) / np.sqrt(2 * (len(slice_data) - 1))
 
             hist.SetBinContent(k+1,np.abs(fitted_rms))
             hist.SetBinError(k+1,sem)
