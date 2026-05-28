@@ -83,10 +83,11 @@ def fit_gaussian(slice_data, bins, mean = 0, rms = None, mean_bounds=(-0.001,0.0
 
 # Function for fitting a Gaussian to the data -- first step fits with fixed mean, then releases for final fit
 def fit_gaussian_two_step(slice_data, bins, mean = 0, rms = None,debug=False):
+    #print("test 1")
 
     if bins is None:
         bins = np.linspace(np.min(slice_data), np.max(slice_data), int(np.sqrt(len(slice_data))))
-
+    #print("test 2")
     h = rt.TH1D(RN(),'',len(bins)-1,bins)
     for entry in slice_data:
         h.Fill(entry)
@@ -95,7 +96,7 @@ def fit_gaussian_two_step(slice_data, bins, mean = 0, rms = None,debug=False):
         mean = h.GetMean() #np.mean(slice_data)
     if rms is None:
         rms = h.GetRMS() # NOTE: This is the standard deviation, see ROOT docs! | np.std(slice_data) # np.sqrt(np.mean(np.square(slice_data - mean))) # - mean
-
+    #print("test 3")
     # f = rt.TF1('f_{}'.format(RN()),lambda x, p: gaussian(x,p[0],p[1],p[2]),bins[0],bins[-1],3)
     f = rt.TF1('f_{}'.format(RN()),gaussian,bins[0],bins[-1],3)
     fname = f.GetName()
@@ -103,27 +104,31 @@ def fit_gaussian_two_step(slice_data, bins, mean = 0, rms = None,debug=False):
     # print('Set par0 to {:.2f}'.format(f.GetParameter(0)))
     f.FixParameter(1,mean)
     f.SetParameter(2,0.5 * rms)
-
+    #print("test 4")
     f.SetParLimits(0,0.5 * h.GetMaximum(),1.5 * h.GetMaximum())
+    #print("test 4.01")
     # f.SetParLimits(1,*mean_bounds)
     f.SetParLimits(2,0.05 * rms,3. * rms)
+    #print("test 4.02")
     # f = rt.TF1(RN(),'gaus',bins[0],bins[-1])
+    #print("rms:", rms)
+    #print("mean:", mean)
 
     initial_parameters = np.array([f.GetParameter(x) for x in range(3)])
-
+    #print("test 4.1")
     fit_result = h.Fit(fname,'RQSI')
-
+    #print("test 4.2")
     initial_parameters_2 = np.array([f.GetParameter(x) for x in range(3)])
-
+    #print("test 5")
     f.ReleaseParameter(0)
     f.ReleaseParameter(1)
     f.ReleaseParameter(2)
 
     fit_option = 'RSI'
     if(not debug): fit_option += 'Q'
-
+    #print("test 5.1")
     fit_result = h.Fit(fname,fit_option)
-
+    #print("test 6")
     parameters = np.array([f.GetParameter(x) for x in range(3)])
     uncerts    = np.array([f.GetParError(x) for x in range(3)])
 
@@ -138,7 +143,8 @@ def fit_gaussian_two_step(slice_data, bins, mean = 0, rms = None,debug=False):
 
 # Function for fitting a two-sided Gaussian to the data.
 def fit_gaussian_two_sided(slice_data, bins, mean = 0, rms = None,debug=False):
-
+    #print("slice data gaussian 2 sided:", fit_gaussian_two_sided)
+    #print("bins gaussian 2 sided:", bins)
     if bins is None:
         bins = np.linspace(np.min(slice_data), np.max(slice_data), int(np.sqrt(len(slice_data))))
 

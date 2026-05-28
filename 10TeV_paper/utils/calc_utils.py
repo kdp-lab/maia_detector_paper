@@ -28,7 +28,7 @@ def combine_masks(mask_list):
             combined_mask[j] *= mask[j,0]
     return combined_mask
 
-def process_data(datax, datay, numbins, x_bins=None, bins=None,theta=False,degrees=False,debug=False,debug_name=None, debug_directory=None, debug_labels=None, debug_xlabel=None):
+def process_data(datax, datay, numbins, x_bins=None, bins=None,theta=False,degrees=False,debug=False,debug_name=None, debug_directory=None, debug_labels=None, debug_xlabel=None, use2BinsFinalpTSlice=False, pTvsTheta=False):
     """
     Process data to calculate RMS values binned by the provided data.
 
@@ -58,51 +58,99 @@ def process_data(datax, datay, numbins, x_bins=None, bins=None,theta=False,degre
     if isinstance(bins, np.ndarray):
         bins = [bins] * len(datay)  # Replicate the array for each dataset
 
+    _x_bins_override = x_bins  # save before the loop overwrites x_bins
+
     # Loop over the data
+    print("len(datay):", len(datay))
+    print("numbins before:", numbins)
     for j in range(len(datay)):
+        print("j:", j)
+        if(use2BinsFinalpTSlice):
+            if(j == (len(datay) - 1)):
+                numbins = 2
+        print("numbins:", numbins)
+        #print("j:", j)
         data_flatx = ak.to_numpy(np.transpose(np.ravel(datax[j])))
+        #print("len(data_flatx):", len(data_flatx))
         data_flaty = ak.to_numpy(np.transpose(np.ravel(datay[j])))
 
         # TODO: Deal properly with edge case of len(data_flatx) == 0
         if(len(data_flatx) == 0): continue
 
-        if(x_bins is None):
-
+        if _x_bins_override is not None:
+            x_bins = np.array(_x_bins_override, dtype=float)
+        else:
             x_bins = np.linspace(np.min(data_flatx), np.max(data_flatx), numbins + 1,dtype=float)
-            if(theta):
-                if(degrees):
-                    x_bins = np.linspace(15,165, numbins + 1)
-                else:
-                    x_bins = np.array([30.*np.pi/180.,
-                        40.*np.pi/180.,
+        if(theta and _x_bins_override is None):
+            if(degrees):
+                x_bins = np.linspace(10,170, numbins + 1)
+            else:
+                if pTvsTheta:
+                    
+                        x_bins = np.array([
+                        10.*np.pi/180.,
+                        #20.*np.pi/180.,
+                        30.*np.pi/180.,
+                        #40.*np.pi/180.,
                         50.*np.pi/180.,
+                        #40.*np.pi/180.,
+                        #50.*np.pi/180.,
+                        #60.*np.pi/180.,
                         60.*np.pi/180.,
                         70.*np.pi/180.,
+                        80.*np.pi/180.,
                         90.*np.pi/180.,
+                        100.*np.pi/180.,
                         110.*np.pi/180.,
                         120.*np.pi/180.,
                         130.*np.pi/180.,
+                        #140.*np.pi/180.,
+                        150.*np.pi/180.,
+                        #160.*np.pi/180.,
+                        #120.*np.pi/180.,
+                        #130.*np.pi/180.,
+                        #140.*np.pi/180.,
+                        170.*np.pi/180.
+                        ])
+                else:
+                    x_bins = np.array([10.*np.pi/180.,
+                        40.*np.pi/180.,
+                        #50.*np.pi/180.,
+                        #60.*np.pi/180.,
+                        70.*np.pi/180.,
+                        90.*np.pi/180.,
+                        110.*np.pi/180.,
+                        #120.*np.pi/180.,
+                        #130.*np.pi/180.,
                         140.*np.pi/180.,
-                        150.*np.pi/180.
+                        170.*np.pi/180.
                         ]
-                    )
+                )
         numbins = len(x_bins) - 1
+        #print("x_bins:", x_bins)
 
         hist = rt.TH1D(RN(),'',numbins,x_bins)
 
-        # Loop over the theta bins # TODO: Theta? I don't think these comments are quite right. -Jan
+        # Loop over the theta bins # TODO: Theta? I don't think these comments are quite right. -Jan # I second this. I think it's used for theta, pT bins - Mark
         for k in range(numbins):
+            #print("k:", k)
             if(debug):
                 print('Bin [{}/{}]'.format(k+1,numbins))
 
             # Slice the data based on the theta bins
+            #print("data_flaty:", data_flaty)
+            #print("data_flatx:", data_flatx)
+            #print("(data_flatx >= x_bins[k]) & (data_flatx < x_bins[k + 1]):", (data_flatx >= x_bins[k]) & (data_flatx < x_bins[k + 1]))
             slice_data = data_flaty[(data_flatx >= x_bins[k]) & (data_flatx < x_bins[k + 1])]
 
             # try:
 
             # Gaussian fit
+            #print("bin processed", j)
+            #print("slice_data", slice_data)
+            #print("bins[j]:", bins[j])
             fit_results = fit_gaussian_two_step(slice_data, bins=bins[j], mean=0,debug=debug)
-            assert fit_results['fit_result_pointer'].Status() == 0 # NOTE: If this breaks, we fall back on mean/rms directly from distribution
+            #assert fit_results['fit_result_pointer'].Status() == 0 # NOTE: If this breaks, we fall back on mean/rms directly from distribution
             popt = fit_results['parameters']
             uncerts = fit_results['uncertainties']
             fitted_rms = popt[2]
@@ -110,7 +158,7 @@ def process_data(datax, datay, numbins, x_bins=None, bins=None,theta=False,degre
 
             # Two-sided Gaussian fit
             fit_results2 = fit_gaussian_two_sided(slice_data, bins=bins[j], mean=0,debug=debug)
-            assert fit_results2['fit_result_pointer'].Status() == 0 # NOTE: If this breaks, we fall back on mean/rms directly from distribution
+            #assert fit_results2['fit_result_pointer'].Status() == 0 # NOTE: If this breaks, we fall back on mean/rms directly from distribution
             popt2 = fit_results['parameters']
             uncerts2 = fit_results['uncertainties']
             fitted_rms2 = popt[2]
@@ -151,8 +199,8 @@ def process_data(datax, datay, numbins, x_bins=None, bins=None,theta=False,degre
                 h.Draw('HIST')
 
                 if(use_two_sided):
-                    f = rt.TF1('f_{}'.format(RN()),two_sided_gaussian,dmin,dmax,4)
-                    for l in range(4):
+                    f = rt.TF1('f_{}'.format(RN()),two_sided_gaussian,dmin,dmax,3)
+                    for l in range(3):
                         f.SetParameter(l,popt[l])
                 else:
                     f = rt.TF1('f_{}'.format(RN()),gaussian,dmin,dmax,3)
@@ -165,8 +213,8 @@ def process_data(datax, datay, numbins, x_bins=None, bins=None,theta=False,degre
                 f.SetNpx(500)
 
                 if(use_two_sided):
-                    f2 = rt.TF1('f2_{}'.format(RN()),two_sided_gaussian,dmin,dmax,4)
-                    for l in range(4):
+                    f2 = rt.TF1('f2_{}'.format(RN()),two_sided_gaussian,dmin,dmax,3)
+                    for l in range(3):
                         f2.SetParameter(l,fit_results['initial_parameters'][0][l]) # NOTE: indexing for fit_gaussian_two_step
                 else:
                     f2 = rt.TF1('f2_{}'.format(RN()),gaussian,dmin,dmax,3)
@@ -189,7 +237,7 @@ def process_data(datax, datay, numbins, x_bins=None, bins=None,theta=False,degre
                 pave.AddText('#mu = {:.1e} #pm {:.1e}'.format(popt[1],uncerts[1]))
                 pave.AddText('#sigma = {:.1e} #pm {:.1e}'.format(popt[2],uncerts[2]))
                 if(use_two_sided):
-                    pave.AddText('#alpha = {:.1e} #pm {:.1e}'.format(popt[3],uncerts[3]))
+                    pave.AddText('#alpha = {:.1e} #pm {:.1e}'.format(popt[2],uncerts[2]))
                 pave.Draw()
 
                 legend = rt.TLegend(0.6,0.6,0.9,0.8)
@@ -217,8 +265,11 @@ def process_data(datax, datay, numbins, x_bins=None, bins=None,theta=False,degre
         processed_results.append(hist)
     return processed_results
 
-def calculate_efficiencies(track_data, truth_data, mask_pairs, num_bins=10, min_value=None, max_value=None, custom_bins=None):
+
+def calculate_efficiencies(track_data, track_data_selected, truth_data,  mask_pairs, num_bins=10, min_value=None, max_value=None, custom_bins=None):
     """
+    Now modified to allow overlay of two different track collections as selections/cleaning now applied within reconstruction, 
+    so, rather than using masks to apply cleaning, will now overlay data from separate track collections - Mark
 
     Updated efficiency calculation. A little hard-coded, but I think
     the old version defined efficiency in a somewhat confusing way.
@@ -251,6 +302,69 @@ def calculate_efficiencies(track_data, truth_data, mask_pairs, num_bins=10, min_
     # masks allow us to optionally apply track cleaning as a Boolean array.
     for mask_pair in mask_pairs:
         track_mask, truth_mask = mask_pair
+        print("track mask:",track_mask )
+        print("truth mask :",truth_mask )
+        if(truth_mask is None): # if not masking out via any cuts, just take all events
+            truth_mask = np.full(nevents,True)
+        if(track_mask is None):
+            track_mask = np.full(nevents,True) # NOTE: allowing masks to be different, in case reco has extra cuts (e.g. cleaning)
+
+        numerator   = rt.TH1D(RN(),'',num_bins,efficiency_bins)
+        denominator = rt.TH1D(RN(),'',num_bins,efficiency_bins)
+
+        for i in range(nevents): # looping thru awkward arrays
+            if(not(truth_mask[i])):
+                #print("truth mask applied")
+                continue
+
+            track = track_data[i] # in practice, might be empty -- if we failed to get a track
+            muon = truth_data[i][0] # basically assuming this to be of length 1
+            # bin_idx = (np.digitize(muon,efficiency_bins) - 1)[0]
+
+            denominator.Fill(muon)
+
+            if(len(track) == 0): continue # will happen if there is no matched track
+
+            if(not(track_mask[i])): 
+                #print("track mask applied")
+                continue
+
+            numerator.Fill(muon) # NOTE: filling bin corresponding to the matched *muon* kinematics, not the track kinematics!
+
+        # prevent divide-by-zero errors
+        for i in range(denominator.GetNbinsX()):
+            if(denominator.GetBinContent(i+1) == 0):
+                denominator.SetBinContent(i+1,1)
+
+        efficiency = rt.TEfficiency(numerator,denominator)
+        efficiency.SetStatisticOption(rt.TEfficiency.kFNormal) # TODO: Is this right? There are a number of options, frequentist & Bayesian -Jan
+
+        # efficiency = rt.TH1D(numerator)
+        # efficiency.Divide(denominator)
+
+        # # NOTE: ROOT might be able to do some of this automatically? Will do by hand, to be safe.
+        # for i in range(efficiency.GetNbinsX()):
+        #     num = numerator.GetBinContent(i+1)
+        #     num_e = numerator.GetBinError(i+1)
+        #     denom = denominator.GetBinContent(i+1)
+        #     denom_e = denominator.GetBinError(i+1)
+        #     eff = efficiency.GetBinContent(i+1)
+
+        #     uncert = 0.
+        #     if(num != 0. and denom != 0.):
+        #         uncert = eff * np.sqrt( np.square(num_e / num) + np.square(denom_e / denom) )
+        #         print('a = {:.2e} +/- {:.2e}'.format(num,num_e))
+        #         print('b = {:.2e} +/- {:.2e}'.format(denom,denom_e))
+        #         print('\t-> uncertainty = {:.2e}'.format(uncert))
+        #     efficiency.SetBinError(i+1,uncert)
+
+        # package things in a list, since this is how old code did it
+        results.append(efficiency)
+
+    # second loop for selected tracks - this is done in a silly way and should be updated to read in and loop through track and selected track data in one loop - Mark 
+    # masks are now used just to apply the barrel / endcap requirement
+    for mask_pair in mask_pairs:
+        track_mask, truth_mask = mask_pair
         if(truth_mask is None): # if not masking out via any cuts, just take all events
             truth_mask = np.full(nevents,True)
         if(track_mask is None):
@@ -262,7 +376,7 @@ def calculate_efficiencies(track_data, truth_data, mask_pairs, num_bins=10, min_
         for i in range(nevents): # looping thru awkward arrays
             if(not(truth_mask[i])): continue
 
-            track = track_data[i] # in practice, might be empty -- if we failed to get a track
+            track = track_data_selected[i] # in practice, might be empty -- if we failed to get a track
             muon = truth_data[i][0] # basically assuming this to be of length 1
             # bin_idx = (np.digitize(muon,efficiency_bins) - 1)[0]
 
@@ -270,7 +384,7 @@ def calculate_efficiencies(track_data, truth_data, mask_pairs, num_bins=10, min_
 
             if(len(track) == 0): continue # will happen if there is no matched track
 
-            if(not(track_mask[i])): continue
+            #if(not(track_mask[i])): continue
 
             numerator.Fill(muon) # NOTE: filling bin corresponding to the matched *muon* kinematics, not the track kinematics!
 
