@@ -91,8 +91,8 @@ class Plotter():
             secax.set_xticks(theta_ticks)
             secax.set_xticklabels([f'{t:.2f}' for t in theta_ticks])
             secax.tick_params(which='major', labelsize=fontsize - 6)
-            # ±0.5 minor ticks on the main eta axis (tick mark only, no label)
-            ax.xaxis.set_minor_locator(matplotlib.ticker.FixedLocator([-0.5, 0.5]))
+            # ±0.5, ±1.5 minor ticks on the main eta axis (tick mark only, no label)
+            ax.xaxis.set_minor_locator(matplotlib.ticker.FixedLocator([-1.5, -0.5, 0.5, 1.5]))
             ax.tick_params(axis='x', which='minor', length=6, width=1.0)
         return secax
 
